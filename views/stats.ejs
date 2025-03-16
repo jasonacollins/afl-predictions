@@ -1,0 +1,115 @@
+<%- include('partials/header') %>
+
+<div class="container">
+  <h1>AFL Prediction Statistics</h1>
+  
+  <div class="tab-navigation">
+    <a href="/predictions" class="tab">Make Predictions</a>
+    <a href="/matches/stats" class="tab active">View Statistics</a>
+    <% if (locals.isAdmin) { %>
+      <a href="/admin" class="tab">Admin Panel</a>
+    <% } %>
+  </div>
+  
+  <div class="stats-container">
+    <div class="stats-card leaderboard">
+      <h2 class="stats-heading">Predictor Leaderboard</h2>
+      
+      <% if (predictorStats.length === 0 || predictorStats.every(stat => stat.correct + stat.incorrect === 0)) { %>
+        <div class="no-stats">
+          <p>No prediction results available yet. Statistics will appear once matches are completed.</p>
+        </div>
+      <% } else { %>
+        <table class="stats-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Name</th>
+              <th>Accuracy</th>
+              <th>Correct</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% 
+              let rank = 1;
+              predictorStats.forEach(stats => {
+                const total = stats.correct + stats.incorrect;
+                if (total > 0) {
+            %>
+              <tr class="<%= stats.id === currentUser.id ? 'current-user' : '' %>">
+                <td><%= rank++ %></td>
+                <td><%= stats.name %> <%= stats.id === currentUser.id ? '(You)' : '' %></td>
+                <td><%= stats.accuracy %>%</td>
+                <td><%= stats.correct %></td>
+                <td><%= total %></td>
+              </tr>
+            <% 
+                }
+              });
+            %>
+          </tbody>
+        </table>
+      <% } %>
+    </div>
+    
+    <div class="stats-card">
+      <h2 class="stats-heading">Recent Match Results</h2>
+      
+      <% if (completedMatches.length === 0) { %>
+        <div class="no-stats">
+          <p>No completed matches yet. Results will appear here after matches are played.</p>
+        </div>
+      <% } else { %>
+        <div class="recent-matches">
+          <% completedMatches.forEach(match => { %>
+            <div class="match-card has-result">
+              <div class="match-header">
+                <span><%= match.round_number %></span>
+                <span><%= match.match_date %></span>
+              </div>
+              
+              <div class="match-teams">
+                <div class="home-team"><%= match.home_team %></div>
+                <div class="vs">vs</div>
+                <div class="away-team"><%= match.away_team %></div>
+              </div>
+              
+              <div class="match-result">
+                <span class="score"><%= match.home_score %> - <%= match.away_score %></span>
+              </div>
+              
+              <% 
+                const userPrediction = predictorStats.find(p => p.id === currentUser.id);
+                const predictions = userPrediction ? userPrediction.predictions : [];
+                const matchPrediction = predictions.find(p => p.match_id === match.match_id);
+              %>
+              
+              <% if (matchPrediction) { %>
+                <div class="prediction-result">
+                  <p>Your prediction: <%= matchPrediction.home_win_probability %>% for <%= match.home_team %></p>
+                  <% 
+                    const homeWon = match.home_score > match.away_score;
+                    const awayWon = match.home_score < match.away_score;
+                    const correct = (homeWon && matchPrediction.home_win_probability > 50) || 
+                                   (awayWon && matchPrediction.home_win_probability < 50) || 
+                                   (match.home_score === match.away_score && matchPrediction.home_win_probability === 50);
+                  %>
+                  <p class="result-accuracy <%= correct ? 'correct' : 'incorrect' %>">
+                    <%= correct ? 'Correct prediction! 🎉' : 'Incorrect prediction 😔' %>
+                  </p>
+                </div>
+              <% } else { %>
+                <div class="no-prediction">
+                  <p>You did not make a prediction for this match</p>
+                </div>
+              <% } %>
+            </div>
+          <% }); %>
+        </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

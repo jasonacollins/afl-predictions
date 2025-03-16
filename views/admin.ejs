@@ -1,0 +1,189 @@
+<%- include('partials/header') %>
+
+<div class="container">
+  <h1>Admin Dashboard</h1>
+  
+  <div class="tab-navigation">
+    <a href="/predictions" class="tab">Make Predictions</a>
+    <a href="/matches/stats" class="tab">View Statistics</a>
+    <a href="/admin" class="tab active">Admin Panel</a>
+  </div>
+  
+  <% if (locals.success) { %>
+    <div class="alert success">
+      <%= success %>
+    </div>
+  <% } %>
+  
+  <% if (locals.error) { %>
+    <div class="alert error">
+      <%= error %>
+    </div>
+  <% } %>
+  
+  <div class="admin-container">
+    <div class="admin-section">
+      <h2>Add New Predictor</h2>
+      <form action="/admin/predictors" method="POST" class="admin-form">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required>
+        </div>
+        
+        <div class="form-group checkbox">
+          <input type="checkbox" id="isAdmin" name="isAdmin">
+          <label for="isAdmin">Admin privileges</label>
+        </div>
+        
+        <button type="submit" class="button primary-button">Add Predictor</button>
+      </form>
+    </div>
+    
+    <div class="admin-section">
+      <h2>Current Predictors</h2>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Role</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% predictors.forEach(predictor => { %>
+            <tr>
+              <td><%= predictor.predictor_id %></td>
+              <td><%= predictor.name %></td>
+              <td><%= predictor.is_admin ? 'Admin' : 'User' %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="admin-section">
+      <h2>Manage User Predictions</h2>
+      
+      <div class="user-selection">
+        <h3>Select User</h3>
+        <div class="user-buttons">
+          <% predictors.forEach(predictor => { %>
+            <button 
+              class="user-button" 
+              data-user-id="<%= predictor.predictor_id %>"
+              onclick="selectUser('<%= predictor.predictor_id %>', '<%= predictor.name %>')"
+            >
+              <%= predictor.name %>
+            </button>
+          <% }) %>
+        </div>
+      </div>
+      
+      <div id="user-predictions" class="user-predictions">
+        <div class="selected-user-info">
+          <p>Selected user: <span id="selected-user">None</span></p>
+          <input type="hidden" id="selected-user-id" value="">
+        </div>
+        
+        <div class="round-selector">
+          <h3>Select Round</h3>
+          <div class="round-buttons">
+            <% rounds.forEach(round => { %>
+              <button 
+                data-round="<%= round.round_number %>" 
+                class="round-button"
+              >
+                <% if (round.round_number === 'OR') { %>
+                  Opening Round
+                <% } else if (round.round_number.startsWith('Finals') || 
+                              round.round_number === 'Semi Finals' || 
+                              round.round_number === 'Prelim Finals' || 
+                              round.round_number === 'Grand Final') { %>
+                  <%= round.round_number %>
+                <% } else { %>
+                  Round <%= round.round_number %>
+                <% } %>
+              </button>
+            <% }) %>
+          </div>
+        </div>
+        
+        <div id="matches-container" class="matches-container">
+          <div class="no-selection">
+            Please select a user and a round to manage predictions
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Initialize with empty predictions
+  window.userPredictions = {};
+  
+  // Override save prediction for admin
+  document.addEventListener('DOMContentLoaded', function() {
+    // Override the savePrediction function when used in admin context
+    window.savePredictionOriginal = window.savePrediction;
+    window.savePrediction = function(matchId, probability, button) {
+      const userId = document.getElementById('selected-user-id').value;
+      
+      if (!userId) {
+        alert('Please select a user first');
+        return;
+      }
+      
+      // Show saving state
+      const originalText = button.textContent;
+      button.textContent = 'Saving...';
+      button.disabled = true;
+      
+      fetch(`/admin/predictions/${userId}/save`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          matchId: matchId,
+          probability: probability
+        }),
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          button.textContent = 'Saved!';
+          setTimeout(() => {
+            button.textContent = originalText;
+            button.disabled = false;
+          }, 1500);
+          
+          // Update stored prediction
+          updateStoredPrediction(matchId, probability);
+        } else {
+          button.textContent = data.error || 'Error!';
+          setTimeout(() => {
+            button.textContent = originalText;
+            button.disabled = false;
+          }, 1500);
+        }
+      })
+      .catch(error => {
+        console.error('Error saving prediction:', error);
+        button.textContent = 'Failed!';
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.disabled = false;
+        }, 1500);
+      });
+    };
+  });
+</script>
+<script src="/js/main.js"></script>
+
+<%- include('partials/footer') %>

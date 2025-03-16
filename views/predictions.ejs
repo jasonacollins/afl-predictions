@@ -1,0 +1,143 @@
+<%- include('partials/header') %>
+
+<div class="container">
+  <h1>AFL Match Predictions</h1>
+  
+  <div class="tab-navigation">
+    <a href="/predictions" class="tab active">Make Predictions</a>
+    <a href="/matches/stats" class="tab">View Statistics</a>
+    <% if (locals.isAdmin) { %>
+      <a href="/admin" class="tab">Admin Panel</a>
+    <% } %>
+  </div>
+  
+  <div class="round-selector">
+    <h2>Select Round</h2>
+    <div class="round-buttons">
+      <% rounds.forEach(round => { %>
+        <button 
+          data-round="<%= round.round_number %>" 
+          class="round-button <%= round.round_number === selectedRound ? 'selected' : '' %>"
+        >
+          <% if (round.round_number === 'OR') { %>
+            Opening Round
+          <% } else if (round.round_number.startsWith('Finals') || 
+                        round.round_number === 'Semi Finals' || 
+                        round.round_number === 'Prelim Finals' || 
+                        round.round_number === 'Grand Final') { %>
+            <%= round.round_number %>
+          <% } else { %>
+            Round <%= round.round_number %>
+          <% } %>
+        </button>
+      <% }) %>
+    </div>
+  </div>
+  
+  <div id="matches-container" class="matches-container">
+    <% if (matches.length === 0) { %>
+      <div class="no-matches">No matches available for this round</div>
+    <% } else { %>
+      <% matches.forEach(match => { %>
+        <% 
+          const isLocked = match.isLocked;
+          const hasResult = match.home_score !== null && match.away_score !== null;
+          const prediction = predictions[match.match_id] || '';
+          const awayPrediction = prediction !== '' ? (100 - prediction) : '';
+        %>
+        <div class="match-card <%= hasResult ? 'has-result' : '' %> <%= isLocked ? 'locked' : '' %>">
+          <div class="match-header">
+            <span class="match-date"><%= match.match_date %></span>
+            <span class="match-location"><%= match.location %></span>
+            <% if (isLocked) { %>
+              <span class="match-locked">LOCKED</span>
+            <% } %>
+          </div>
+          
+          <div class="match-teams">
+            <div class="home-team"><%= match.home_team %></div>
+            <div class="vs">vs</div>
+            <div class="away-team"><%= match.away_team %></div>
+          </div>
+          
+          <% if (hasResult) { %>
+            <div class="match-result">
+              <span class="score"><%= match.home_score %> - <%= match.away_score %></span>
+            </div>
+          <% } %>
+          
+          <% if (!isLocked || locals.isAdmin) { %>
+            <div class="prediction-controls">
+              <div class="prediction-inputs">
+                <div class="team-prediction">
+                  <label><%= match.home_team %>:</label>
+                  <div class="input-with-symbol">
+                    <input type="number" 
+                           class="prediction-input home-prediction" 
+                           data-match-id="<%= match.match_id %>" 
+                           min="0" max="100" 
+                           value="<%= prediction %>">
+                    <span class="input-symbol">%</span>
+                  </div>
+                </div>
+                
+                <div class="team-prediction">
+                  <label><%= match.away_team %>:</label>
+                  <div class="input-with-symbol">
+                    <input type="number" 
+                           class="prediction-input away-prediction" 
+                           data-match-id="<%= match.match_id %>" 
+                           min="0" max="100" 
+                           value="<%= awayPrediction %>"
+                           readonly>
+                    <span class="input-symbol">%</span>
+                  </div>
+                </div>
+              </div>
+              
+              <button class="save-prediction button primary-button" data-match-id="<%= match.match_id %>">
+                Save Prediction
+              </button>
+            </div>
+          <% } else if (isLocked && !hasResult) { %>
+            <div class="prediction-locked">
+              <% if (prediction !== '') { %>
+                <p>Your prediction: <%= prediction %>% for <%= match.home_team %></p>
+                <p><%= 100 - prediction %>% for <%= match.away_team %></p>
+              <% } else { %>
+                <p>No prediction made</p>
+              <% } %>
+              <p class="locked-message">Match has started - predictions locked</p>
+            </div>
+          <% } else if (hasResult) { %>
+            <div class="prediction-result">
+              <% if (prediction !== '') { %>
+                <p>Your prediction: <%= prediction %>% for <%= match.home_team %></p>
+                <% 
+                  const homeWon = match.home_score > match.away_score;
+                  const awayWon = match.home_score < match.away_score;
+                  const correct = (homeWon && prediction > 50) || (awayWon && prediction < 50) || 
+                                 (match.home_score === match.away_score && prediction === 50);
+                %>
+                <p class="result-accuracy <%= correct ? 'correct' : 'incorrect' %>">
+                  <%= correct ? 'Correct prediction! 🎉' : 'Incorrect prediction 😔' %>
+                </p>
+              <% } else { %>
+                <p>No prediction made</p>
+              <% } %>
+            </div>
+          <% } %>
+        </div>
+      <% }) %>
+    <% } %>
+  </div>
+</div>
+
+<script>
+  // Pass user predictions to client-side JavaScript
+  window.userPredictions = <%- JSON.stringify(predictions) %>;
+  window.isAdmin = <%= locals.isAdmin || false %>;
+</script>
+<script src="/js/main.js"></script>
+
+<%- include('partials/footer') %>

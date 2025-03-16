@@ -1,0 +1,215 @@
+const express = require('express');
+const router = express.Router();
+const { getQuery, getOne, runQuery } = require('../models/db');
+const { isAuthenticated } = require('./auth');
+
+// Require authentication for all prediction routes
+router.use(isAuthenticated);
+
+// Get predictions page
+router.get('/', async (req, res) => {
+  try {
+    // Get all rounds
+    const rounds = await getQuery(
+      `SELECT DISTINCT round_number 
+       FROM matches 
+       ORDER BY 
+         CASE 
+           WHEN round_number = 'OR' THEN 0 
+           WHEN round_number LIKE 'Finals%' THEN 100
+           WHEN round_number = 'Semi Finals' THEN 101
+           WHEN round_number = 'Prelim Finals' THEN 102
+           WHEN round_number = 'Grand Final' THEN 103
+           ELSE CAST(round_number AS INTEGER) 
+         END`
+    );
+    
+    // Get first round by default
+    const selectedRound = rounds.length > 0 ? rounds[0].round_number : null;
+    
+    // Get matches for the selected round
+    let matches = [];
+    if (selectedRound) {
+      matches = await getQuery(
+        `SELECT m.*, 
+         t1.name as home_team, 
+         t2.name as away_team 
+         FROM matches m
+         JOIN teams t1 ON m.home_team_id = t1.team_id
+         JOIN teams t2 ON m.away_team_id = t2.team_id
+         WHERE m.round_number = ?
+         ORDER BY m.match_number`,
+        [selectedRound]
+      );
+      
+      // Process matches to add isLocked field
+      matches = matches.map(match => {
+        let isLocked = false;
+        
+        if (match.match_date) {
+          try {
+            // Date should be in ISO format after import
+            const matchDate = new Date(match.match_date);
+            isLocked = new Date() > matchDate;
+          } catch (error) {
+            console.error('Error parsing date:', match.match_date);
+          }
+        }
+        
+        return {
+          ...match,
+          isLocked
+        };
+      });
+    }
+    
+    // Get user predictions
+    const predictorId = req.session.user.id;
+    const userPredictions = await getQuery(
+      'SELECT * FROM predictions WHERE predictor_id = ?',
+      [predictorId]
+    );
+    
+    // Create predictions map
+    const predictionsMap = {};
+    userPredictions.forEach(pred => {
+      predictionsMap[pred.match_id] = pred.home_win_probability;
+    });
+    
+    res.render('predictions', {
+      rounds,
+      selectedRound,
+      matches,
+      predictions: predictionsMap
+    });
+  } catch (error) {
+    console.error('Error loading predictions page:', error);
+    res.render('error', { error: 'Failed to load predictions' });
+  }
+});
+
+// Get matches for a specific round (AJAX)
+router.get('/round/:round', async (req, res) => {
+  try {
+    const round = req.params.round;
+    
+    const matches = await getQuery(
+      `SELECT m.*, 
+       t1.name as home_team, 
+       t2.name as away_team 
+       FROM matches m
+       JOIN teams t1 ON m.home_team_id = t1.team_id
+       JOIN teams t2 ON m.away_team_id = t2.team_id
+       WHERE m.round_number = ?
+       ORDER BY m.match_number`,
+      [round]
+    );
+    
+    // Process matches with proper date handling
+    const processedMatches = matches.map(match => {
+      let isLocked = false;
+      
+      if (match.match_date) {
+        try {
+          // Date should be in ISO format after import
+          const matchDate = new Date(match.match_date);
+          isLocked = new Date() > matchDate;
+        } catch (error) {
+          console.error('Error parsing date:', match.match_date);
+        }
+      }
+      
+      // Format the date for display (convert ISO to readable format)
+      let displayDate = match.match_date;
+      try {
+        if (match.match_date && match.match_date.includes('T')) {
+          const date = new Date(match.match_date);
+          displayDate = date.toLocaleDateString('en-AU', { 
+            day: '2-digit', 
+            month: '2-digit', 
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+        }
+      } catch (error) {
+        console.error('Error formatting date for display:', match.match_date);
+      }
+      
+      return {
+        ...match,
+        match_date: displayDate,
+        isLocked
+      };
+    });
+    
+    res.json(processedMatches);
+  } catch (error) {
+    console.error('Error fetching matches:', error);
+    res.status(500).json({ error: 'Failed to fetch matches' });
+  }
+});
+
+// Save prediction
+router.post('/save', async (req, res) => {
+  try {
+    const { matchId, probability } = req.body;
+    const predictorId = req.session.user.id;
+    
+    if (!matchId || probability === undefined) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    // Check if match is locked (except for admins)
+    if (!req.session.isAdmin) {
+      const match = await getOne(
+        `SELECT m.match_date FROM matches m WHERE m.match_id = ?`,
+        [matchId]
+      );
+      
+      if (match && match.match_date) {
+        try {
+          const matchDate = new Date(match.match_date);
+          if (new Date() > matchDate) {
+            return res.status(403).json({ 
+              error: 'This match has started and predictions are locked' 
+            });
+          }
+        } catch (error) {
+          console.error('Error checking match lock status:', error);
+        }
+      }
+    }
+    
+    // Sanitize probability value
+    let prob = parseInt(probability);
+    if (isNaN(prob)) prob = 50;
+    if (prob < 0) prob = 0;
+    if (prob > 100) prob = 100;
+    
+    // Check if prediction exists
+    const existing = await getOne(
+      'SELECT * FROM predictions WHERE match_id = ? AND predictor_id = ?',
+      [matchId, predictorId]
+    );
+    
+    if (existing) {
+      await runQuery(
+        'UPDATE predictions SET home_win_probability = ? WHERE match_id = ? AND predictor_id = ?',
+        [prob, matchId, predictorId]
+      );
+    } else {
+      await runQuery(
+        'INSERT INTO predictions (match_id, predictor_id, home_win_probability) VALUES (?, ?, ?)',
+        [matchId, predictorId, prob]
+      );
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error saving prediction:', error);
+    res.status(500).json({ error: 'Failed to save prediction' });
+  }
+});
+
+module.exports = router;
