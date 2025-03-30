@@ -75,12 +75,21 @@ router.get('/', async (req, res) => {
 // Get stats page
 router.get('/stats', async (req, res) => {
   try {
+    // Get the selected year or default to current year
+    const currentYear = new Date().getFullYear();
+    const selectedYear = req.query.year ? parseInt(req.query.year) : currentYear;
+    
+    // Get all available years
+    const years = await getQuery(
+      'SELECT DISTINCT year FROM matches ORDER BY year DESC'
+    );
+    
     // Get all predictors
     const predictors = await getQuery(
       'SELECT predictor_id, name FROM predictors ORDER BY name'
     );
     
-    // Get matches with results
+    // Get matches with results for the selected year
     const completedMatches = await getQuery(`
       SELECT m.*, 
              t1.name as home_team, 
@@ -89,31 +98,34 @@ router.get('/stats', async (req, res) => {
       JOIN teams t1 ON m.home_team_id = t1.team_id
       JOIN teams t2 ON m.away_team_id = t2.team_id
       WHERE m.home_score IS NOT NULL AND m.away_score IS NOT NULL
+      AND m.year = ?
       ORDER BY m.match_date DESC
       LIMIT 10
-    `);
+    `, [selectedYear]);
     
-    // Get current user's predictions for completed matches
-    const currentUserPredictions = await getQuery(`
+    // Get current user's predictions for completed matches in the selected year
+    const userPredictions = await getQuery(`
       SELECT p.*
       FROM predictions p
       JOIN matches m ON p.match_id = m.match_id
       WHERE p.predictor_id = ?
       AND m.home_score IS NOT NULL AND m.away_score IS NOT NULL
-    `, [req.session.user.id]);
+      AND m.year = ?
+    `, [req.session.user.id, selectedYear]);
     
     // Calculate accuracy for each predictor
     const predictorStats = [];
     
     for (const predictor of predictors) {
-      // Get all predictions for this predictor with results
+      // Get all predictions for this predictor with results for the selected year
       const predictionResults = await getQuery(`
         SELECT p.*, m.home_score, m.away_score
         FROM predictions p
         JOIN matches m ON p.match_id = m.match_id
         WHERE p.predictor_id = ?
         AND m.home_score IS NOT NULL AND m.away_score IS NOT NULL
-      `, [predictor.predictor_id]);
+        AND m.year = ?
+      `, [predictor.predictor_id, selectedYear]);
       
       let correct = 0;
       let incorrect = 0;
@@ -148,13 +160,32 @@ router.get('/stats', async (req, res) => {
       });
     }
     
-    res.render('predictions', {
+    // Sort predictors by accuracy (highest first)
+    predictorStats.sort((a, b) => parseFloat(b.accuracy) - parseFloat(a.accuracy));
+    
+    // Format dates for completed matches
+    completedMatches.forEach(match => {
+      if (match.match_date && match.match_date.includes('T')) {
+        try {
+          const date = new Date(match.match_date);
+          match.match_date = date.toLocaleDateString('en-AU', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric'
+          });
+        } catch (error) {
+          console.error('Error formatting date:', match.match_date);
+        }
+      }
+    });
+    
+    res.render('stats', {
       years,
       selectedYear,
-      rounds,
-      selectedRound,
-      matches,
-      predictions: predictionsMap
+      predictorStats,
+      completedMatches,
+      userPredictions,
+      currentUser: req.session.user
     });
   } catch (error) {
     console.error('Error generating statistics:', error);

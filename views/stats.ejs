@@ -11,13 +11,27 @@
     <% } %>
   </div>
   
+  <div class="year-selector">
+    <h2>Select Season</h2>
+    <div class="year-buttons">
+      <% years.forEach(yearObj => { %>
+        <a 
+          href="/matches/stats?year=<%= yearObj.year %>" 
+          class="year-button <%= yearObj.year === selectedYear ? 'selected' : '' %>"
+        >
+          <%= yearObj.year %>
+        </a>
+      <% }) %>
+    </div>
+  </div>
+  
   <div class="stats-container">
     <div class="stats-card leaderboard">
-      <h2 class="stats-heading">Predictor Leaderboard</h2>
+      <h2 class="stats-heading">Predictor Leaderboard - <%= selectedYear %> Season</h2>
       
       <% if (predictorStats.length === 0 || predictorStats.every(stat => stat.correct + stat.incorrect === 0)) { %>
         <div class="no-stats">
-          <p>No prediction results available yet. Statistics will appear once matches are completed.</p>
+          <p>No prediction results available yet for <%= selectedYear %>. Statistics will appear once matches are completed.</p>
         </div>
       <% } else { %>
         <table class="stats-table">
@@ -54,11 +68,11 @@
     </div>
     
     <div class="stats-card">
-      <h2 class="stats-heading">Recent Match Results</h2>
+      <h2 class="stats-heading">Recent Match Results - <%= selectedYear %></h2>
       
       <% if (completedMatches.length === 0) { %>
         <div class="no-stats">
-          <p>No completed matches yet. Results will appear here after matches are played.</p>
+          <p>No completed matches yet for <%= selectedYear %>. Results will appear here after matches are played.</p>
         </div>
       <% } else { %>
         <div class="recent-matches">

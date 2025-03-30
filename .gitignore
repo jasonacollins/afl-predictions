@@ -130,3 +130,4 @@ dist
 .pnp.*
 .DS_Store
 data/sessions.db
+data/sessions.db
