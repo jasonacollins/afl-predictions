@@ -30,27 +30,7 @@
         
         <button type="submit" class="button primary-button">Login</button>
       </form>
-      
-      <div class="admin-login-toggle">
-        <button id="toggle-admin-login" class="button secondary-button">Admin Login</button>
-      </div>
     </div>
   </div>
-  
-  <script>
-    document.getElementById('toggle-admin-login').addEventListener('click', function() {
-      const usernameField = document.getElementById('username');
-      
-      if (usernameField.value === 'Admin') {
-        usernameField.value = '';
-        usernameField.readOnly = false;
-        this.textContent = 'Admin Login';
-      } else {
-        usernameField.value = 'Admin';
-        usernameField.readOnly = true;
-        this.textContent = 'User Login';
-      }
-    });
-  </script>
 </body>
 </html>

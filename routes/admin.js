@@ -269,4 +269,89 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+// Add this to routes/admin.js
+router.get('/export/predictions', async (req, res) => {
+  try {
+    // Get all predictions with related data
+    const predictions = await getQuery(`
+      SELECT 
+        p.prediction_id,
+        p.match_id,
+        p.predictor_id,
+        p.home_win_probability,
+        p.prediction_time,
+        pr.name as predictor_name,
+        m.match_number,
+        m.round_number,
+        m.match_date,
+        t1.name as home_team,
+        t2.name as away_team,
+        m.home_score,
+        m.away_score
+      FROM predictions p
+      JOIN predictors pr ON p.predictor_id = pr.predictor_id
+      JOIN matches m ON p.match_id = m.match_id
+      JOIN teams t1 ON m.home_team_id = t1.team_id
+      JOIN teams t2 ON m.away_team_id = t2.team_id
+      ORDER BY pr.name, m.match_date
+    `);
+    
+    // Set headers for CSV download
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=afl-predictions-export.csv');
+    
+    // Create CSV header
+    let csvData = 'Predictor,Round,Match Number,Match Date,Home Team,Away Team,Home Win %,Away Win %,Home Score,Away Score,Correct\n';
+    
+    // Add prediction rows
+    predictions.forEach(prediction => {
+      const homeWon = prediction.home_score !== null && prediction.away_score !== null && 
+                    prediction.home_score > prediction.away_score;
+      const awayWon = prediction.home_score !== null && prediction.away_score !== null && 
+                    prediction.home_score < prediction.away_score;
+      const tie = prediction.home_score !== null && prediction.away_score !== null && 
+                prediction.home_score === prediction.away_score;
+      
+      let correct = '';
+      if (prediction.home_score !== null && prediction.away_score !== null) {
+        const correctPrediction = 
+          (homeWon && prediction.home_win_probability > 50) || 
+          (awayWon && prediction.home_win_probability < 50) || 
+          (tie && prediction.home_win_probability === 50);
+          
+        correct = correctPrediction ? 'Yes' : 'No';
+      }
+      
+      // Format date for CSV
+      let matchDate = prediction.match_date;
+      try {
+        if (matchDate && matchDate.includes('T')) {
+          const date = new Date(matchDate);
+          matchDate = date.toLocaleDateString('en-AU');
+        }
+      } catch (error) {
+        console.error('Error formatting date:', matchDate);
+      }
+      
+      csvData += `"${prediction.predictor_name}",`;
+      csvData += `"${prediction.round_number}",`;
+      csvData += `${prediction.match_number},`;
+      csvData += `"${matchDate}",`;
+      csvData += `"${prediction.home_team}",`;
+      csvData += `"${prediction.away_team}",`;
+      csvData += `${prediction.home_win_probability},`;
+      csvData += `${100 - prediction.home_win_probability},`;
+      csvData += `${prediction.home_score || ''},`;
+      csvData += `${prediction.away_score || ''},`;
+      csvData += `"${correct}"\n`;
+    });
+    
+    // Send CSV data
+    res.send(csvData);
+  } catch (error) {
+    console.error('Error exporting predictions:', error);
+    res.status(500).render('error', { error: 'Failed to export predictions' });
+  }
+});
+
 module.exports = router;

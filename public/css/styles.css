@@ -649,3 +649,13 @@ textarea {
     gap: 0.5rem;
   }
 }
+
+.export-actions {
+  margin-bottom: 1.5rem;
+  text-align: right;
+}
+
+.export-actions .button {
+  display: inline-block;
+  margin-left: 0.5rem;
+}

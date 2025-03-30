@@ -3,6 +3,7 @@ const session = require('express-session');
 const SqliteStore = require('connect-sqlite3')(session);
 const path = require('path');
 const methodOverride = require('method-override');
+require('dotenv').config();
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -30,10 +31,13 @@ app.use(session({
     db: 'sessions.db',
     dir: './data'
   }),
-  secret: 'afl-predictions-secret-key',
+  secret: process.env.SESSION_SECRET || 'afl-predictions-secret-key',
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 30 * 24 * 60 * 60 * 1000 } // 30 days
+  cookie: { 
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    secure: process.env.NODE_ENV === 'production'
+  }
 }));
 
 // Make user data available to all templates
@@ -56,6 +60,16 @@ app.get('/', (req, res) => {
   } else {
     res.render('index');
   }
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).render('error', { 
+    error: process.env.NODE_ENV === 'production' 
+      ? 'An unexpected error occurred' 
+      : err.message
+  });
 });
 
 // Start server

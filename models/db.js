@@ -3,7 +3,7 @@ const path = require('path');
 const bcrypt = require('bcrypt');
 
 // Database path
-const dbPath = path.join(__dirname, '../data/afl_predictions.db');
+const dbPath = process.env.DB_PATH || path.join(__dirname, '../data/afl_predictions.db');
 const db = new sqlite3.Database(dbPath);
 
 // Helper to run queries with promises

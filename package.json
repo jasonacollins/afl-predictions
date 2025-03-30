@@ -4,14 +4,18 @@
   "description": "AFL Predictions App",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js",
-    "dev": "nodemon app.js",
-    "import": "node scripts/import-data.js"
-  },
+  "start": "node app.js",
+  "dev": "nodemon app.js",
+  "import": "node scripts/import-data.js"
+},
+"engines": {
+  "node": ">=16.0.0"
+},
   "dependencies": {
     "bcrypt": "^5.1.0",
     "connect-sqlite3": "^0.9.13",
     "csv-parse": "^5.6.0",
+    "dotenv": "^16.4.7",
     "ejs": "^3.1.9",
     "express": "^4.18.2",
     "express-session": "^1.17.3",
@@ -19,6 +23,6 @@
     "sqlite3": "^5.1.6"
   },
   "devDependencies": {
-    "nodemon": "^2.0.22"
+    "nodemon": "^3.1.9"
   }
 }

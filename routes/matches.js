@@ -77,19 +77,6 @@ router.get('/stats', async (req, res) => {
       'SELECT predictor_id, name FROM predictors ORDER BY name'
     );
     
-    // Get total predictions per user
-    const predictionCounts = await getQuery(`
-      SELECT predictor_id, COUNT(*) as count 
-      FROM predictions 
-      GROUP BY predictor_id
-    `);
-    
-    // Create a map of predictor_id to prediction count
-    const countsMap = {};
-    predictionCounts.forEach(row => {
-      countsMap[row.predictor_id] = row.count;
-    });
-    
     // Get matches with results
     const completedMatches = await getQuery(`
       SELECT m.*, 
@@ -103,65 +90,66 @@ router.get('/stats', async (req, res) => {
       LIMIT 10
     `);
     
-    // Get all predictions for completed matches
-    const predictions = await getQuery(`
-      SELECT p.*, pr.name as predictor_name 
+    // Get current user's predictions for completed matches
+    const currentUserPredictions = await getQuery(`
+      SELECT p.*
       FROM predictions p
-      JOIN predictors pr ON p.predictor_id = pr.predictor_id
       JOIN matches m ON p.match_id = m.match_id
-      WHERE m.home_score IS NOT NULL AND m.away_score IS NOT NULL
-    `);
+      WHERE p.predictor_id = ?
+      AND m.home_score IS NOT NULL AND m.away_score IS NOT NULL
+    `, [req.session.user.id]);
     
     // Calculate accuracy for each predictor
-    const predictorStats = {};
+    const predictorStats = [];
     
-    predictors.forEach(predictor => {
-      predictorStats[predictor.predictor_id] = {
-        id: predictor.predictor_id,
-        name: predictor.name,
-        totalPredictions: countsMap[predictor.predictor_id] || 0,
-        correct: 0,
-        incorrect: 0,
-        accuracy: 0
-      };
-    });
-    
-    // Process predictions
-    predictions.forEach(prediction => {
-      const match = completedMatches.find(m => m.match_id === prediction.match_id);
+    for (const predictor of predictors) {
+      // Get all predictions for this predictor with results
+      const predictionResults = await getQuery(`
+        SELECT p.*, m.home_score, m.away_score
+        FROM predictions p
+        JOIN matches m ON p.match_id = m.match_id
+        WHERE p.predictor_id = ?
+        AND m.home_score IS NOT NULL AND m.away_score IS NOT NULL
+      `, [predictor.predictor_id]);
       
-      if (match) {
-        const homeWon = match.home_score > match.away_score;
-        const awayWon = match.home_score < match.away_score;
-        const tie = match.home_score === match.away_score;
+      let correct = 0;
+      let incorrect = 0;
+      
+      // Calculate correct/incorrect
+      predictionResults.forEach(pred => {
+        const homeWon = pred.home_score > pred.away_score;
+        const awayWon = pred.home_score < pred.away_score;
+        const tie = pred.home_score === pred.away_score;
         
         const correctPrediction = 
-          (homeWon && prediction.home_win_probability > 50) || 
-          (awayWon && prediction.home_win_probability < 50) || 
-          (tie && prediction.home_win_probability === 50);
+          (homeWon && pred.home_win_probability > 50) || 
+          (awayWon && pred.home_win_probability < 50) || 
+          (tie && pred.home_win_probability === 50);
         
-        const predictorId = prediction.predictor_id;
-        
-        if (predictorStats[predictorId]) {
-          if (correctPrediction) {
-            predictorStats[predictorId].correct++;
-          } else {
-            predictorStats[predictorId].incorrect++;
-          }
+        if (correctPrediction) {
+          correct++;
+        } else {
+          incorrect++;
         }
-      }
-    });
-    
-    // Calculate final accuracy
-    Object.values(predictorStats).forEach(stats => {
-      const total = stats.correct + stats.incorrect;
-      stats.accuracy = total > 0 ? ((stats.correct / total) * 100).toFixed(1) : 0;
-    });
+      });
+      
+      const total = correct + incorrect;
+      const accuracy = total > 0 ? ((correct / total) * 100).toFixed(1) : 0;
+      
+      predictorStats.push({
+        id: predictor.predictor_id,
+        name: predictor.name,
+        correct,
+        incorrect,
+        accuracy
+      });
+    }
     
     res.render('stats', {
-      predictorStats: Object.values(predictorStats).sort((a, b) => b.accuracy - a.accuracy),
+      predictorStats: predictorStats.sort((a, b) => b.accuracy - a.accuracy),
       completedMatches,
-      currentUser: req.session.user
+      currentUser: req.session.user,
+      userPredictions: currentUserPredictions
     });
   } catch (error) {
     console.error('Error generating statistics:', error);

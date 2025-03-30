@@ -80,9 +80,7 @@
               </div>
               
               <% 
-                const userPrediction = predictorStats.find(p => p.id === currentUser.id);
-                const predictions = userPrediction ? userPrediction.predictions : [];
-                const matchPrediction = predictions.find(p => p.match_id === match.match_id);
+                const matchPrediction = userPredictions.find(p => p.match_id === match.match_id);
               %>
               
               <% if (matchPrediction) { %>
@@ -92,8 +90,8 @@
                     const homeWon = match.home_score > match.away_score;
                     const awayWon = match.home_score < match.away_score;
                     const correct = (homeWon && matchPrediction.home_win_probability > 50) || 
-                                   (awayWon && matchPrediction.home_win_probability < 50) || 
-                                   (match.home_score === match.away_score && matchPrediction.home_win_probability === 50);
+                                  (awayWon && matchPrediction.home_win_probability < 50) || 
+                                  (match.home_score === match.away_score && matchPrediction.home_win_probability === 50);
                   %>
                   <p class="result-accuracy <%= correct ? 'correct' : 'incorrect' %>">
                     <%= correct ? 'Correct prediction! 🎉' : 'Incorrect prediction 😔' %>
