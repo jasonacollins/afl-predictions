@@ -113,6 +113,19 @@ async function initializeDatabase() {
       );
       
       console.log('Database schema created successfully!');
+    } else {
+      // Check for missing columns and add them if needed
+      console.log('Checking for schema updates...');
+      
+      // Check if 'year' column exists in matches table
+      const yearColumnExists = await getOne(
+        "SELECT 1 FROM pragma_table_info('matches') WHERE name='year'"
+      );
+      
+      if (!yearColumnExists) {
+        console.log('Adding year column to matches table');
+        await runQuery("ALTER TABLE matches ADD COLUMN year INTEGER DEFAULT 2025");
+      }
     }
   } catch (err) {
     console.error('Error initializing database:', err);
