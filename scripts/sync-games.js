@@ -6,8 +6,8 @@ const path = require('path');
 // Base API URL
 const BASE_API_URL = 'https://api.squiggle.com.au/';
 
-// Custom user agent - CHANGE THIS TO YOUR INFO
-const USER_AGENT = "AFL Predictions App - your-email@example.com";
+// Custom user agent
+const USER_AGENT = "jason@jasoncollins.me";
 
 // Cache directory
 const CACHE_DIR = path.join(__dirname, '../data/cache');
@@ -153,15 +153,19 @@ async function syncGamesFromAPI(options = {}) {
     
     for (const game of data.games) {
       try {
-        // Get team IDs directly from the API
-        const homeTeamId = typeof game.hteam === 'number' ? game.hteam : null;
-        const awayTeamId = typeof game.ateam === 'number' ? game.ateam : null;
-        
-        // Skip games with missing team IDs
-        if (!homeTeamId || !awayTeamId) {
-          console.log(`Skipping game ${game.id}: Missing team IDs`);
-          skipCount++;
-          continue;
+        // Get team IDs from the API
+        let homeTeamId = game.hteamid || null;
+        let awayTeamId = game.ateamid || null;
+
+        // For finals without assigned teams, use placeholder IDs if the team name is "To be announced"
+        if (!homeTeamId && game.hteam && game.hteam.toLowerCase().includes("to be announced")) {
+          // Use a special ID for TBA home team
+          homeTeamId = 99; // Special ID for "To be announced"
+        }
+
+        if (!awayTeamId && game.ateam && game.ateam.toLowerCase().includes("to be announced")) {
+          // Use a special ID for TBA away team
+          awayTeamId = 99; // Special ID for "To be announced"
         }
         
         // Skip games with missing game ID

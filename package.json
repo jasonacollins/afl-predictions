@@ -4,13 +4,14 @@
   "description": "AFL Predictions App",
   "main": "app.js",
   "scripts": {
-  "start": "node app.js",
-  "dev": "nodemon app.js",
-  "import": "node scripts/import-data.js"
-},
-"engines": {
-  "node": ">=16.0.0"
-},
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "import": "node scripts/import-data.js",
+    "sync-games": "node scripts/sync-games.js"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "dependencies": {
     "bcrypt": "^5.1.0",
     "connect-sqlite3": "^0.9.13",
@@ -20,6 +21,7 @@
     "express": "^4.18.2",
     "express-session": "^1.17.3",
     "method-override": "^3.0.0",
+    "node-fetch": "^2.7.0",
     "sqlite3": "^5.1.6"
   },
   "devDependencies": {
