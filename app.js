@@ -13,7 +13,7 @@ const adminRoutes = require('./routes/admin');
 
 // Initialize express app
 const app = express();
-const port = process.env.PORT || 3000;
+const port = 3001;
 
 // Configure view engine
 app.set('view engine', 'ejs');
@@ -29,14 +29,14 @@ app.use(methodOverride('_method'));
 app.use(session({
   store: new SqliteStore({
     db: 'sessions.db',
-    dir: './data'
+    dir: path.join(__dirname, 'data')  // Use absolute path
   }),
   secret: process.env.SESSION_SECRET || 'afl-predictions-secret-key',
-  resave: false,
-  saveUninitialized: false,
+  resave: true,                       // Changed to true
+  saveUninitialized: true,            // Changed to true
   cookie: { 
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-    secure: process.env.NODE_ENV === 'production'
+    secure: false                     // Set to false for HTTP
   }
 }));
 
