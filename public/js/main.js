@@ -18,7 +18,12 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Update match list for selected round via AJAX
+// In public/js/main.js
 function fetchMatchesForRound(round) {
+  // Get the current year from the URL or use the selected year
+  const urlParams = new URLSearchParams(window.location.search);
+  const year = urlParams.get('year') || new Date().getFullYear();
+  
   // Show loading state
   const matchesContainer = document.getElementById('matches-container');
   if (matchesContainer) {
@@ -34,8 +39,8 @@ function fetchMatchesForRound(round) {
     }
   });
   
-  // Fetch matches from server
-  fetch(`/predictions/round/${round}`)
+  // Fetch matches from server with year parameter
+  fetch(`/predictions/round/${round}?year=${year}`)
     .then(response => response.json())
     .then(matches => {
       renderMatches(matches);

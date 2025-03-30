@@ -659,3 +659,40 @@ textarea {
   display: inline-block;
   margin-left: 0.5rem;
 }
+
+/* In public/css/styles.css */
+.year-selector {
+  margin-bottom: 1.5rem;
+  background-color: white;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.year-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.year-button {
+  background-color: var(--background-light);
+  border: 1px solid var(--border-color);
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 0.875rem;
+  color: var(--text-color);
+}
+
+.year-button:hover {
+  background-color: #f0f0f0;
+  text-decoration: none;
+}
+
+.year-button.selected {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+  color: white;
+}

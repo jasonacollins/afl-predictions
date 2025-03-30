@@ -11,6 +11,20 @@
     <% } %>
   </div>
   
+  <div class="year-selector">
+    <h2>Select Season</h2>
+    <div class="year-buttons">
+      <% years.forEach(yearObj => { %>
+        <a 
+          href="/predictions?year=<%= yearObj.year %>" 
+          class="year-button <%= yearObj.year === selectedYear ? 'selected' : '' %>"
+        >
+          <%= yearObj.year %>
+        </a>
+      <% }) %>
+    </div>
+  </div>
+
   <div class="round-selector">
     <h2>Select Round</h2>
     <div class="round-buttons">
@@ -21,9 +35,10 @@
         >
           <% if (round.round_number === 'OR') { %>
             Opening Round
-          <% } else if (round.round_number.startsWith('Finals') || 
-                        round.round_number === 'Semi Finals' || 
-                        round.round_number === 'Prelim Finals' || 
+          <% } else if (round.round_number === 'Elimination Final' || 
+                        round.round_number === 'Qualifying Final' || 
+                        round.round_number === 'Semi Final' || 
+                        round.round_number === 'Preliminary Final' || 
                         round.round_number === 'Grand Final') { %>
             <%= round.round_number %>
           <% } else { %>

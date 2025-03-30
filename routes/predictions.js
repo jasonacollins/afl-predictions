@@ -9,19 +9,32 @@ router.use(isAuthenticated);
 // Get predictions page
 router.get('/', async (req, res) => {
   try {
-    // Get all rounds
+    // Get the selected year or default to current year
+    const currentYear = new Date().getFullYear();
+    const selectedYear = req.query.year ? parseInt(req.query.year) : currentYear;
+    
+    // Get all available years
+    const years = await getQuery(
+      'SELECT DISTINCT year FROM matches ORDER BY year DESC'
+    );
+    
+    // Get all rounds for the selected year
     const rounds = await getQuery(
       `SELECT DISTINCT round_number 
        FROM matches 
+       WHERE year = ?
        ORDER BY 
          CASE 
            WHEN round_number = 'OR' THEN 0 
-           WHEN round_number LIKE 'Finals%' THEN 100
-           WHEN round_number = 'Semi Finals' THEN 101
-           WHEN round_number = 'Prelim Finals' THEN 102
-           WHEN round_number = 'Grand Final' THEN 103
-           ELSE CAST(round_number AS INTEGER) 
-         END`
+           WHEN round_number LIKE '%' AND CAST(round_number AS INTEGER) BETWEEN 1 AND 99 THEN CAST(round_number AS INTEGER)
+           WHEN round_number = 'Elimination Final' THEN 100
+           WHEN round_number = 'Qualifying Final' THEN 101
+           WHEN round_number = 'Semi Final' THEN 102
+           WHEN round_number = 'Preliminary Final' THEN 103
+           WHEN round_number = 'Grand Final' THEN 104
+           ELSE 999
+         END`,
+      [selectedYear]
     );
     
     // Get first round by default
@@ -77,6 +90,8 @@ router.get('/', async (req, res) => {
     });
     
     res.render('predictions', {
+      years,
+      selectedYear,
       rounds,
       selectedRound,
       matches,
@@ -92,6 +107,7 @@ router.get('/', async (req, res) => {
 router.get('/round/:round', async (req, res) => {
   try {
     const round = req.params.round;
+    const year = req.query.year || new Date().getFullYear();
     
     const matches = await getQuery(
       `SELECT m.*, 
@@ -100,9 +116,9 @@ router.get('/round/:round', async (req, res) => {
        FROM matches m
        JOIN teams t1 ON m.home_team_id = t1.team_id
        JOIN teams t2 ON m.away_team_id = t2.team_id
-       WHERE m.round_number = ?
+       WHERE m.round_number = ? AND m.year = ?
        ORDER BY m.match_number`,
-      [round]
+      [round, year]
     );
     
     // Process matches with proper date handling

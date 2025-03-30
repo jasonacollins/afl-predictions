@@ -106,9 +106,10 @@
               >
                 <% if (round.round_number === 'OR') { %>
                   Opening Round
-                <% } else if (round.round_number.startsWith('Finals') || 
-                              round.round_number === 'Semi Finals' || 
-                              round.round_number === 'Prelim Finals' || 
+                <% } else if (round.round_number === 'Elimination Final' || 
+                              round.round_number === 'Qualifying Final' || 
+                              round.round_number === 'Semi Final' || 
+                              round.round_number === 'Preliminary Final' || 
                               round.round_number === 'Grand Final') { %>
                   <%= round.round_number %>
                 <% } else { %>

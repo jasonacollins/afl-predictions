@@ -214,7 +214,7 @@ async function syncGamesFromAPI(options = {}) {
           await runQuery(
             `UPDATE matches 
              SET round_number = ?, match_date = ?, location = ?, 
-                 home_team_id = ?, away_team_id = ?, home_score = ?, away_score = ?
+                 home_team_id = ?, away_team_id = ?, home_score = ?, away_score = ?, year = ?
              WHERE match_id = ?`,
             [
               roundNumber, 
@@ -224,6 +224,7 @@ async function syncGamesFromAPI(options = {}) {
               awayTeamId, 
               homeScore, 
               awayScore,
+              game.year || (matchDate ? new Date(matchDate).getFullYear() : new Date().getFullYear()),
               existingMatch.match_id
             ]
           );
@@ -233,8 +234,8 @@ async function syncGamesFromAPI(options = {}) {
           await runQuery(
             `INSERT INTO matches 
              (match_number, round_number, match_date, location, 
-              home_team_id, away_team_id, home_score, away_score)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              home_team_id, away_team_id, home_score, away_score, year)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               game.id, 
               roundNumber, 
@@ -243,7 +244,8 @@ async function syncGamesFromAPI(options = {}) {
               homeTeamId, 
               awayTeamId, 
               homeScore, 
-              awayScore
+              awayScore,
+              game.year || (matchDate ? new Date(matchDate).getFullYear() : new Date().getFullYear())
             ]
           );
           insertCount++;

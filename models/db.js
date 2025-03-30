@@ -75,6 +75,7 @@ async function initializeDatabase() {
           away_team_id INTEGER,
           home_score INTEGER,
           away_score INTEGER,
+          year INTEGER DEFAULT 2025,
           FOREIGN KEY (home_team_id) REFERENCES teams (team_id),
           FOREIGN KEY (away_team_id) REFERENCES teams (team_id)
         )

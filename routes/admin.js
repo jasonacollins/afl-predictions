@@ -11,29 +11,44 @@ router.use(isAdmin);
 // Admin dashboard
 router.get('/', async (req, res) => {
   try {
+    // Get selected year or default to current year
+    const currentYear = new Date().getFullYear();
+    const selectedYear = req.query.year ? parseInt(req.query.year) : currentYear;
+    
+    // Get all available years
+    const years = await getQuery(
+      'SELECT DISTINCT year FROM matches ORDER BY year DESC'
+    );
+    
     // Get all predictors
     const predictors = await getQuery(
       'SELECT predictor_id, name, is_admin FROM predictors ORDER BY name'
     );
     
-    // Get all rounds for match selection
+    // Get all rounds for the selected year
     const rounds = await getQuery(
       `SELECT DISTINCT round_number 
        FROM matches 
+       WHERE year = ?
        ORDER BY 
          CASE 
            WHEN round_number = 'OR' THEN 0 
-           WHEN round_number LIKE 'Finals%' THEN 100
-           WHEN round_number = 'Semi Finals' THEN 101
-           WHEN round_number = 'Prelim Finals' THEN 102
-           WHEN round_number = 'Grand Final' THEN 103
-           ELSE CAST(round_number AS INTEGER) 
-         END`
+           WHEN round_number LIKE '%' AND CAST(round_number AS INTEGER) BETWEEN 1 AND 99 THEN CAST(round_number AS INTEGER)
+           WHEN round_number = 'Elimination Final' THEN 100
+           WHEN round_number = 'Qualifying Final' THEN 101
+           WHEN round_number = 'Semi Final' THEN 102
+           WHEN round_number = 'Preliminary Final' THEN 103
+           WHEN round_number = 'Grand Final' THEN 104
+           ELSE 999
+         END`,
+      [selectedYear]
     );
     
     res.render('admin', {
       predictors,
       rounds,
+      years,
+      selectedYear,
       selectedUser: null,
       success: req.query.success || null,
       error: req.query.error || null
