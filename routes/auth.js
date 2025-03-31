@@ -3,6 +3,17 @@ const bcrypt = require('bcrypt');
 const router = express.Router();
 const { getOne, runQuery } = require('../models/db');
 
+// Add rate limiting
+const rateLimit = require('express-rate-limit');
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 attempts per window
+  message: 'Too many login attempts, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Login page (GET)
 router.get('/login', (req, res) => {
   if (req.session.user) {
@@ -12,7 +23,7 @@ router.get('/login', (req, res) => {
 });
 
 // Login submission (POST)
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
 

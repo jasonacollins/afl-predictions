@@ -8,6 +8,13 @@ const { isAuthenticated, isAdmin } = require('./auth');
 router.use(isAuthenticated);
 router.use(isAdmin);
 
+// Password strength validation
+function isStrongPassword(password) {
+  // At least 8 chars, including uppercase, lowercase, number, and special char
+  const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+  return regex.test(password);
+}
+
 // Admin dashboard
 router.get('/', async (req, res) => {
   try {
@@ -80,7 +87,7 @@ router.post('/predictors', async (req, res) => {
     }
     
     // Hash password
-    const salt = await bcrypt.genSalt(10);
+    const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(password, salt);
     
     // Convert isAdmin to integer (checkbox value)
@@ -366,6 +373,49 @@ router.get('/export/predictions', async (req, res) => {
   } catch (error) {
     console.error('Error exporting predictions:', error);
     res.status(500).render('error', { error: 'Failed to export predictions' });
+  }
+});
+
+// Add password reset route
+router.post('/reset-password/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const { newPassword } = req.body;
+    
+    // Validate input
+    if (!newPassword) {
+      return res.redirect('/admin?error=New password is required');
+    }
+    
+    // Check password strength
+    if (!isStrongPassword(newPassword)) {
+      return res.redirect('/admin?error=Password must be at least 8 characters and include uppercase, lowercase, number, and special character');
+    }
+    
+    // Check if user exists
+    const user = await getOne(
+      'SELECT * FROM predictors WHERE predictor_id = ?',
+      [userId]
+    );
+    
+    if (!user) {
+      return res.redirect('/admin?error=User not found');
+    }
+    
+    // Hash new password
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    
+    // Update password
+    await runQuery(
+      'UPDATE predictors SET password = ? WHERE predictor_id = ?',
+      [hashedPassword, userId]
+    );
+    
+    res.redirect('/admin?success=Password reset successfully');
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    res.redirect('/admin?error=Failed to reset password');
   }
 });
 

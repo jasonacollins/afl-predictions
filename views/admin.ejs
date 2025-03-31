@@ -58,6 +58,7 @@
             <th>ID</th>
             <th>Name</th>
             <th>Role</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -66,6 +67,14 @@
               <td><%= predictor.predictor_id %></td>
               <td><%= predictor.name %></td>
               <td><%= predictor.is_admin ? 'Admin' : 'User' %></td>
+              <td>
+                <button 
+                  onclick="showResetPasswordForm(<%= predictor.predictor_id %>, '<%= predictor.name %>')" 
+                  class="button secondary-button"
+                >
+                  Reset Password
+                </button>
+              </td>
             </tr>
           <% }) %>
         </tbody>
@@ -129,6 +138,72 @@
     </div>
   </div>
 </div>
+
+<!-- Add a hidden modal for password reset -->
+<div id="resetPasswordModal" class="modal" style="display: none;">
+  <div class="modal-content">
+    <span class="close" onclick="closeModal()">&times;</span>
+    <h3>Reset Password for <span id="resetUserName"></span></h3>
+    <form id="resetPasswordForm" action="/admin/reset-password/0" method="POST">
+      <div class="form-group">
+        <label for="newPassword">New Password</label>
+        <input type="password" id="newPassword" name="newPassword" required>
+      </div>
+      <button type="submit" class="button primary-button">Reset Password</button>
+    </form>
+  </div>
+</div>
+
+<!-- Add style for the modal -->
+<style>
+  .modal {
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.4);
+  }
+  
+  .modal-content {
+    background-color: white;
+    margin: 15% auto;
+    padding: 20px;
+    border-radius: 8px;
+    width: 80%;
+    max-width: 500px;
+  }
+  
+  .close {
+    float: right;
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+</style>
+
+<!-- Add JavaScript for the modal -->
+<script>
+  function showResetPasswordForm(userId, userName) {
+    document.getElementById('resetUserName').textContent = userName;
+    document.getElementById('resetPasswordForm').action = `/admin/reset-password/${userId}`;
+    document.getElementById('newPassword').value = '';
+    document.getElementById('resetPasswordModal').style.display = 'block';
+  }
+  
+  function closeModal() {
+    document.getElementById('resetPasswordModal').style.display = 'none';
+  }
+  
+  // Close modal if user clicks outside of it
+  window.onclick = function(event) {
+    const modal = document.getElementById('resetPasswordModal');
+    if (event.target === modal) {
+      closeModal();
+    }
+  }
+</script>
 
 <script>
   // Initialize with empty predictions
