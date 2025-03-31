@@ -58,7 +58,7 @@ npm run dev
 
 3. Restart the application:
    ```bash
-   pm2 restart app  # Assuming PM2 is used
+   pm2 restart afl-predictions  # Assuming PM2 is used
    ```
 
 ## Repository Access
