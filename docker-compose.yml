@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - SESSION_SECRET=your_secure_session_secret
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
