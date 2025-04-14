@@ -1,5 +1,15 @@
 // Modified version of public/js/main.js
 document.addEventListener('DOMContentLoaded', function() {
+  // Format all existing date elements on the page
+  const dateElements = document.querySelectorAll('.match-date');
+  dateElements.forEach(element => {
+    const originalDate = element.textContent;
+    if (originalDate && originalDate.includes('T')) {
+      element.setAttribute('data-original-date', originalDate);
+      element.textContent = formatDateToLocalTimezone(originalDate);
+    }
+  });
+  
   // Handle round selection
   const roundButtons = document.querySelectorAll('.round-button');
   if (roundButtons.length > 0) {
@@ -79,7 +89,7 @@ function renderMatches(matches) {
     html += `
       <div class="match-card ${hasResult ? 'has-result' : ''} ${isLocked ? 'locked' : ''}">
         <div class="match-header">
-          <span class="match-date">${match.match_date}</span>
+          <span class="match-date" data-original-date="${match.match_date}">${formatDateToLocalTimezone(match.match_date)}</span>
           <span class="match-location">${match.location}</span>
           ${isLocked ? '<span class="match-locked">LOCKED</span>' : ''}
         </div>
@@ -413,5 +423,33 @@ function selectUser(userId, userName) {
       .catch(error => {
         console.error('Error fetching user predictions:', error);
       });
+  }
+}
+
+function formatDateToLocalTimezone(isoDateString) {
+  if (!isoDateString) return '';
+  
+  try {
+    // Create a date object from the ISO string
+    const date = new Date(isoDateString);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) return isoDateString;
+    
+    // Format with Australian English date formatting
+    const options = { 
+      weekday: 'short',
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    };
+    
+    return date.toLocaleString('en-AU', options);
+  } catch (error) {
+    console.error('Error formatting date:', error);
+    return isoDateString;
   }
 }

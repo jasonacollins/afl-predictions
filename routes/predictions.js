@@ -121,7 +121,7 @@ router.get('/round/:round', async (req, res) => {
       [round, year]
     );
     
-    // Process matches with proper date handling
+    // Process matches just to determine if they're locked - but don't format the dates
     const processedMatches = matches.map(match => {
       let isLocked = false;
       
@@ -135,26 +135,9 @@ router.get('/round/:round', async (req, res) => {
         }
       }
       
-      // Format the date for display (convert ISO to readable format)
-      let displayDate = match.match_date;
-      try {
-        if (match.match_date && match.match_date.includes('T')) {
-          const date = new Date(match.match_date);
-          displayDate = date.toLocaleDateString('en-AU', { 
-            day: '2-digit', 
-            month: '2-digit', 
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          });
-        }
-      } catch (error) {
-        console.error('Error formatting date for display:', match.match_date);
-      }
-      
+      // Return match with isLocked flag but keep the original date
       return {
         ...match,
-        match_date: displayDate,
         isLocked
       };
     });
