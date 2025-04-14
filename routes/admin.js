@@ -164,7 +164,17 @@ router.post('/predictions/:userId/save', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    // Sanitize probability value
+    // Check if this is a deletion request (empty string or null)
+    if (probability === "" || probability === null) {
+      // Delete the prediction
+      await runQuery(
+        'DELETE FROM predictions WHERE match_id = ? AND predictor_id = ?',
+        [matchId, userId]
+      );
+      return res.json({ success: true, action: 'deleted' });
+    }
+    
+    // Sanitize probability value for actual predictions
     let prob = parseInt(probability);
     if (isNaN(prob)) prob = 50;
     if (prob < 0) prob = 0;

@@ -180,6 +180,16 @@ router.post('/save', async (req, res) => {
       }
     }
     
+    // Check if this is a deletion request (empty string or null)
+    if (probability === "" || probability === null) {
+      // Delete the prediction
+      await runQuery(
+        'DELETE FROM predictions WHERE match_id = ? AND predictor_id = ?',
+        [matchId, predictorId]
+      );
+      return res.json({ success: true, action: 'deleted' });
+    }
+    
     // Sanitize probability value
     let prob = parseInt(probability);
     if (isNaN(prob)) prob = 50;

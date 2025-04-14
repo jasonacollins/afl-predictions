@@ -771,3 +771,40 @@ textarea {
   padding: 8px;
   border-radius: 4px;
 }
+
+/* Team Selection for 50% predictions */
+.team-selection {
+  margin: 10px 0;
+  padding: 10px;
+  background-color: var(--background-light);
+  border-radius: 4px;
+  text-align: center;
+}
+
+.team-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.team-button {
+  flex: 1;
+  padding: 8px;
+  margin: 0 5px;
+  background-color: white;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.team-button:hover {
+  background-color: #f0f0f0;
+}
+
+.team-button.selected {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}

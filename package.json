@@ -7,7 +7,8 @@
     "start": "node app.js",
     "dev": "nodemon app.js",
     "import": "node scripts/import-data.js",
-    "sync-games": "node scripts/sync-games.js"
+    "sync-games": "node scripts/sync-games.js",
+    "update-schema": "node scripts/update-schema.js"
   },
   "engines": {
     "node": ">=16.0.0"

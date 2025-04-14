@@ -78,7 +78,20 @@ function renderMatches(matches) {
   matches.forEach(match => {
     const isLocked = match.isLocked;
     const hasResult = match.home_score !== null && match.away_score !== null;
-    const prediction = getPredictionValue(match.match_id) || '';
+    
+    // Get prediction data
+    let prediction = '';
+    let tippedTeam = 'home';
+    
+    if (window.userPredictions && window.userPredictions[match.match_id]) {
+      if (typeof window.userPredictions[match.match_id] === 'object') {
+        prediction = window.userPredictions[match.match_id].probability || '';
+        tippedTeam = window.userPredictions[match.match_id].tippedTeam || 'home';
+      } else {
+        prediction = window.userPredictions[match.match_id] || '';
+      }
+    }
+    
     const awayPrediction = prediction !== '' ? (100 - prediction) : '';
     const hasPrediction = prediction !== '';
     
@@ -135,7 +148,18 @@ function renderMatches(matches) {
                 </div>
               </div>
             </div>
-            <button class="${buttonClass}" data-match-id="${match.match_id}">
+            
+            ${parseInt(prediction) === 50 ? `
+              <div id="team-selection-${match.match_id}" class="team-selection">
+                <p>Who do you think will win?</p>
+                <div class="team-buttons">
+                  <button type="button" class="team-button home-team-button ${tippedTeam === 'home' ? 'selected' : ''}" data-team="home">${match.home_team}</button>
+                  <button type="button" class="team-button away-team-button ${tippedTeam === 'away' ? 'selected' : ''}" data-team="away">${match.away_team}</button>
+                </div>
+              </div>
+            ` : ''}
+            
+            <button class="${buttonClass}" data-match-id="${match.match_id}" data-tipped-team="${tippedTeam}">
               ${buttonText}
             </button>
           </div>
@@ -144,6 +168,7 @@ function renderMatches(matches) {
             ${prediction !== '' ? `
               <p>Your prediction: ${prediction}% for ${match.home_team}</p>
               <p>${100 - prediction}% for ${match.away_team}</p>
+              ${parseInt(prediction) === 50 ? `<p>Tipped: ${tippedTeam === 'home' ? match.home_team : match.away_team} to win</p>` : ''}
             ` : `
               <p>No prediction made</p>
             `}
@@ -153,7 +178,8 @@ function renderMatches(matches) {
           <div class="prediction-result">
             ${prediction !== '' ? `
               <p>Your prediction: ${prediction}% for ${match.home_team}</p>
-              ${calculateAccuracy(match, prediction)}
+              ${parseInt(prediction) === 50 ? `<p>Tipped: ${tippedTeam === 'home' ? match.home_team : match.away_team} to win</p>` : ''}
+              ${calculateAccuracy(match, prediction, tippedTeam)}
             ` : `
               <p>No prediction made</p>
             `}
@@ -171,7 +197,7 @@ function renderMatches(matches) {
 }
 
 // Calculate prediction accuracy text
-function calculateAccuracy(match, prediction) {
+function calculateAccuracy(match, prediction, tippedTeam) {
   if (match.home_score === null || match.away_score === null || prediction === '') {
     return '';
   }
@@ -198,27 +224,29 @@ function calculateAccuracy(match, prediction) {
     bitsScore = (1 + Math.log2(1 - Math.abs(0.5 - safeProb))).toFixed(4);
   }
   
-  // Calculate tip points
-  let tipPoints;
-  let tipClass;
+  // Calculate tip points - with new logic for 50% predictions
+  let tipPoints = 0;
+  let tipClass = "incorrect";
   
   if (parseInt(prediction) === 50) {
-    if (tie) {
+    // For 50% predictions, use the tipped team
+    if ((homeWon && tippedTeam === 'home') || (awayWon && tippedTeam === 'away')) {
       tipPoints = 1.0;
       tipClass = "correct";
-    } else {
+    } else if (tie) {
+      // Half point for tie regardless of tip
       tipPoints = 0.5;
       tipClass = "partial";
     }
-  } else if ((homeWon && prediction > 50) || (awayWon && prediction < 50)) {
-    tipPoints = 1.0;
-    tipClass = "correct";
-  } else if (tie) {
-    tipPoints = 0.5;
-    tipClass = "partial";
   } else {
-    tipPoints = 0.0;
-    tipClass = "incorrect";
+    // Standard logic for non-50% predictions
+    if ((homeWon && prediction > 50) || (awayWon && prediction < 50)) {
+      tipPoints = 1.0;
+      tipClass = "correct";
+    } else if (tie) {
+      tipPoints = 0.5;
+      tipClass = "partial";
+    }
   }
   
   return `<div class="metrics-details">
@@ -250,6 +278,13 @@ function initPredictionInputs() {
         if (value === '' || isNaN(parseInt(value))) {
           // If home is empty or not a number, clear away as well
           awayInput.value = '';
+          
+          // Update button to show "Clear Prediction" state
+          if (saveButton && originalValue !== '') {
+            saveButton.textContent = 'Clear Prediction';
+            saveButton.classList.remove('saved-state', 'update-state');
+            saveButton.classList.add('delete-state');
+          }
         } else {
           // Otherwise calculate the away percentage
           let homeValue = parseInt(value);
@@ -264,32 +299,80 @@ function initPredictionInputs() {
           }
           
           awayInput.value = 100 - homeValue;
-        }
-        
-        // Update button state based on whether the value has changed
-        if (saveButton) {
-          const hasPrediction = originalValue !== '';
-          const valueChanged = value !== originalValue;
           
-          if (hasPrediction && valueChanged) {
-            // Existing prediction is being changed
-            saveButton.textContent = 'Update Prediction';
-            saveButton.classList.remove('saved-state');
-            saveButton.classList.add('update-state');
-          } else if (hasPrediction && !valueChanged) {
-            // Reverting to original prediction
-            saveButton.textContent = 'Saved';
-            saveButton.classList.add('saved-state');
-            saveButton.classList.remove('update-state');
-          } else if (!hasPrediction) {
-            // New prediction
-            saveButton.textContent = 'Save Prediction';
-            saveButton.classList.remove('saved-state', 'update-state');
+          // Update button state based on whether the value has changed
+          if (saveButton) {
+            const hasPrediction = originalValue !== '';
+            const valueChanged = value !== originalValue;
+            
+            if (hasPrediction && valueChanged) {
+              // Existing prediction is being changed
+              saveButton.textContent = 'Update Prediction';
+              saveButton.classList.remove('saved-state', 'delete-state');
+              saveButton.classList.add('update-state');
+            } else if (hasPrediction && !valueChanged) {
+              // Reverting to original prediction
+              saveButton.textContent = 'Saved';
+              saveButton.classList.add('saved-state');
+              saveButton.classList.remove('update-state', 'delete-state');
+            } else if (!hasPrediction) {
+              // New prediction
+              saveButton.textContent = 'Save Prediction';
+              saveButton.classList.remove('saved-state', 'update-state', 'delete-state');
+            }
           }
         }
       }
     });
   });
+}
+
+// Helper function to add team selection UI
+function addTeamSelection(matchId, homeTeam, awayTeam, saveButton) {
+  // First remove any existing team selection
+  removeTeamSelection(matchId);
+  
+  // Create team selection container
+  const teamSelection = document.createElement('div');
+  teamSelection.className = 'team-selection';
+  teamSelection.id = `team-selection-${matchId}`;
+  teamSelection.innerHTML = `
+    <p>Who do you think will win?</p>
+    <div class="team-buttons">
+      <button type="button" class="team-button home-team-button" data-team="home">${homeTeam}</button>
+      <button type="button" class="team-button away-team-button" data-team="away">${awayTeam}</button>
+    </div>
+  `;
+  
+  // Insert it before the save button
+  saveButton.parentNode.insertBefore(teamSelection, saveButton);
+  
+  // Add event listeners to team buttons
+  const homeButton = teamSelection.querySelector('.home-team-button');
+  const awayButton = teamSelection.querySelector('.away-team-button');
+  
+  homeButton.addEventListener('click', function() {
+    homeButton.classList.add('selected');
+    awayButton.classList.remove('selected');
+    saveButton.dataset.tippedTeam = 'home';
+  });
+  
+  awayButton.addEventListener('click', function() {
+    awayButton.classList.add('selected');
+    homeButton.classList.remove('selected');
+    saveButton.dataset.tippedTeam = 'away';
+  });
+  
+  // Default to home team
+  homeButton.click();
+}
+
+// Helper function to remove team selection UI
+function removeTeamSelection(matchId) {
+  const teamSelection = document.getElementById(`team-selection-${matchId}`);
+  if (teamSelection) {
+    teamSelection.remove();
+  }
 }
 
 // Handle save prediction buttons
@@ -316,17 +399,48 @@ function initSavePredictionButtons() {
           return;
         }
         
-        savePrediction(matchId, probabilityNum, this);
+        // For 50% predictions, ensure a team is selected
+        if (probabilityNum === 50) {
+          const tippedTeam = this.dataset.tippedTeam;
+          if (!tippedTeam) {
+            alert('Please select which team you think will win');
+            return;
+          }
+          savePrediction(matchId, probabilityNum, this);
+        } else {
+          savePrediction(matchId, probabilityNum, this);
+        }
       }
+    });
+  });
+  
+  // Also add click handlers for the team selection buttons that may already be in the DOM
+  document.querySelectorAll('.team-button').forEach(button => {
+    button.addEventListener('click', function() {
+      const teamSelection = this.closest('.team-selection');
+      if (!teamSelection) return;
+      
+      const matchId = teamSelection.id.replace('team-selection-', '');
+      const saveButton = document.querySelector(`.save-prediction[data-match-id="${matchId}"]`);
+      if (!saveButton) return;
+      
+      const teamButtons = teamSelection.querySelectorAll('.team-button');
+      teamButtons.forEach(btn => btn.classList.remove('selected'));
+      this.classList.add('selected');
+      
+      saveButton.dataset.tippedTeam = this.dataset.team;
     });
   });
 }
 
 // Save prediction via AJAX
 function savePrediction(matchId, probability, button) {
+  // Check if this is a deletion (empty value)
+  const isDeleting = probability === "" || probability === null;
+  
   // Show saving state
   const originalText = button.textContent;
-  button.textContent = 'Saving...';
+  button.textContent = isDeleting ? 'Clearing...' : 'Saving...';
   button.disabled = true;
   
   fetch('/predictions/save', {
@@ -342,24 +456,45 @@ function savePrediction(matchId, probability, button) {
   .then(response => response.json())
   .then(data => {
     if (data.success) {
-      // Update button to saved state
-      button.textContent = 'Saved';
-      button.classList.add('saved-state');
-      button.classList.remove('update-state');
-      
-      // Update stored prediction
-      updateStoredPrediction(matchId, probability);
-      
-      // Update the original value in the input
-      const input = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
-      if (input) {
-        input.dataset.originalValue = probability;
+      if (isDeleting) {
+        // Prediction was cleared
+        button.textContent = 'Prediction Cleared';
+        setTimeout(() => {
+          button.textContent = 'Save Prediction';
+          button.classList.remove('saved-state', 'update-state', 'delete-state');
+          button.disabled = false;
+        }, 1500);
+        
+        // Remove from stored predictions
+        if (window.userPredictions && window.userPredictions[matchId] !== undefined) {
+          delete window.userPredictions[matchId];
+        }
+        
+        // Update data-original-value attribute on input
+        const input = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
+        if (input) {
+          input.dataset.originalValue = '';
+        }
+      } else {
+        // Prediction was saved or updated
+        button.textContent = 'Saved';
+        button.classList.add('saved-state');
+        button.classList.remove('update-state', 'delete-state');
+        
+        // Update stored prediction
+        updateStoredPrediction(matchId, probability);
+        
+        // Update the original value in the input
+        const input = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
+        if (input) {
+          input.dataset.originalValue = probability;
+        }
+        
+        // Enable button after a delay
+        setTimeout(() => {
+          button.disabled = false;
+        }, 500);
       }
-      
-      // Enable button after a delay
-      setTimeout(() => {
-        button.disabled = false;
-      }, 500);
     } else {
       button.textContent = data.error || 'Error!';
       setTimeout(() => {
@@ -381,17 +516,23 @@ function savePrediction(matchId, probability, button) {
 // Helper to get prediction value from page data
 function getPredictionValue(matchId) {
   if (window.userPredictions && window.userPredictions[matchId] !== undefined) {
+    if (typeof window.userPredictions[matchId] === 'object') {
+      return window.userPredictions[matchId].probability || '';
+    }
     return window.userPredictions[matchId];
   }
   return '';
 }
 
 // Update stored prediction
-function updateStoredPrediction(matchId, value) {
+function updateStoredPrediction(matchId, value, tippedTeam) {
   if (!window.userPredictions) {
     window.userPredictions = {};
   }
-  window.userPredictions[matchId] = parseInt(value);
+  window.userPredictions[matchId] = {
+    probability: parseInt(value),
+    tippedTeam: tippedTeam
+  };
 }
 
 // Helper for admin user selection
