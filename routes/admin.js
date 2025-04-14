@@ -291,7 +291,7 @@ router.get('/stats', async (req, res) => {
   }
 });
 
-// Add this to routes/admin.js
+// Update the export route in routes/admin.js
 router.get('/export/predictions', async (req, res) => {
   try {
     // Get all predictions with related data
@@ -322,8 +322,8 @@ router.get('/export/predictions', async (req, res) => {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename=afl-predictions-export.csv');
     
-    // Create CSV header
-    let csvData = 'Predictor,Round,Match Number,Match Date,Home Team,Away Team,Home Win %,Away Win %,Home Score,Away Score,Correct\n';
+    // Create CSV header with new metrics columns
+    let csvData = 'Predictor,Round,Match Number,Match Date,Home Team,Away Team,Home Win %,Away Win %,Home Score,Away Score,Correct,Tip Points,Brier Score,Bits Score\n';
     
     // Add prediction rows
     predictions.forEach(prediction => {
@@ -335,13 +335,55 @@ router.get('/export/predictions', async (req, res) => {
                 prediction.home_score === prediction.away_score;
       
       let correct = '';
+      let tipPoints = 0;
+      let brierScore = '';
+      let bitsScore = '';
+      
       if (prediction.home_score !== null && prediction.away_score !== null) {
+        // Basic correctness
         const correctPrediction = 
           (homeWon && prediction.home_win_probability > 50) || 
           (awayWon && prediction.home_win_probability < 50) || 
           (tie && prediction.home_win_probability === 50);
           
         correct = correctPrediction ? 'Yes' : 'No';
+        
+        // Calculate tip points
+        if (prediction.home_win_probability === 50) {
+          // Half point for 50% prediction (full point if it was a tie)
+          tipPoints = tie ? 1.0 : 0.5;
+        } else if (homeWon && prediction.home_win_probability > 50) {
+          // Correctly predicted home team win
+          tipPoints = 1.0;
+        } else if (awayWon && prediction.home_win_probability < 50) {
+          // Correctly predicted away team win
+          tipPoints = 1.0;
+        } else if (tie) {
+          // Half point for any prediction in case of a tie (unless exactly 50%)
+          tipPoints = 0.5;
+        } else {
+          tipPoints = 0.0;
+        }
+        
+        // Calculate Brier score
+        const prob = prediction.home_win_probability / 100;
+        const actualOutcome = homeWon ? 1 : (tie ? 0.5 : 0);
+        brierScore = Math.pow(prob - actualOutcome, 2).toFixed(4);
+        
+        // Calculate Bits score
+        try {
+          const safeProb = Math.max(0.001, Math.min(0.999, prob));
+          if (homeWon) {
+            bitsScore = (1 + Math.log2(safeProb)).toFixed(4);
+          } else if (awayWon) {
+            bitsScore = (1 + Math.log2(1 - safeProb)).toFixed(4);
+          } else { // tie
+            bitsScore = (1 + Math.log2(1 - Math.abs(0.5 - safeProb))).toFixed(4);
+          }
+        } catch (error) {
+          console.error('Error calculating bits score:', error);
+          bitsScore = 'Error';
+        }
       }
       
       // Format date for CSV
@@ -365,7 +407,10 @@ router.get('/export/predictions', async (req, res) => {
       csvData += `${100 - prediction.home_win_probability},`;
       csvData += `${prediction.home_score || ''},`;
       csvData += `${prediction.away_score || ''},`;
-      csvData += `"${correct}"\n`;
+      csvData += `"${correct}",`;
+      csvData += `${tipPoints.toFixed(1)},`;
+      csvData += `${brierScore},`;
+      csvData += `${bitsScore}\n`;
     });
     
     // Send CSV data
