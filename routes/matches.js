@@ -113,7 +113,7 @@ router.get('/stats', async (req, res) => {
       AND m.year = ?
     `, [req.session.user.id, selectedYear]);
     
-    // Calculate accuracy for each predictor
+    // Calculate accuracy for each predictor with additional metrics
     const predictorStats = [];
     
     for (const predictor of predictors) {
@@ -127,41 +127,72 @@ router.get('/stats', async (req, res) => {
         AND m.year = ?
       `, [predictor.predictor_id, selectedYear]);
       
-      let correct = 0;
-      let incorrect = 0;
+      let tipPoints = 0;
+      let totalBrierScore = 0;
+      let totalBitsScore = 0;
+      let totalPredictions = predictionResults.length;
       
-      // Calculate correct/incorrect
+      // Calculate metrics for each prediction
       predictionResults.forEach(pred => {
         const homeWon = pred.home_score > pred.away_score;
         const awayWon = pred.home_score < pred.away_score;
         const tie = pred.home_score === pred.away_score;
         
-        const correctPrediction = 
-          (homeWon && pred.home_win_probability > 50) || 
-          (awayWon && pred.home_win_probability < 50) || 
-          (tie && pred.home_win_probability === 50);
+        // Determine outcome (1 if home team won, 0.5 if tie, 0 if away team won)
+        const actualOutcome = homeWon ? 1 : (tie ? 0.5 : 0);
         
-        if (correctPrediction) {
-          correct++;
-        } else {
-          incorrect++;
+        // Calculate Brier score: (forecast - outcome)^2
+        const probability = pred.home_win_probability / 100;
+        const brierScore = Math.pow(probability - actualOutcome, 2);
+        totalBrierScore += brierScore;
+        
+        // Calculate Bits score
+        let bitsScore;
+        const safeProb = Math.max(0.001, Math.min(0.999, probability));
+        
+        if (homeWon) {
+          bitsScore = 1 + Math.log2(safeProb);
+        } else if (awayWon) {
+          bitsScore = 1 + Math.log2(1 - safeProb);
+        } else { // tie
+          bitsScore = 1 + Math.log2(1 - Math.abs(0.5 - safeProb));
+        }
+        totalBitsScore += bitsScore;
+        
+        // Calculate tip points with half-point system
+        if (pred.home_win_probability === 50) {
+          // Half point for 50% prediction (full point if it was a tie)
+          tipPoints += tie ? 1 : 0.5;
+        } else if (homeWon && pred.home_win_probability > 50) {
+          // Correctly predicted home team win
+          tipPoints += 1;
+        } else if (awayWon && pred.home_win_probability < 50) {
+          // Correctly predicted away team win
+          tipPoints += 1;
+        } else if (tie) {
+          // Half point for any prediction in case of a tie (unless exactly 50%)
+          tipPoints += 0.5;
         }
       });
       
-      const total = correct + incorrect;
-      const accuracy = total > 0 ? ((correct / total) * 100).toFixed(1) : 0;
+      // Calculate averages and percentages
+      const avgBrierScore = totalPredictions > 0 ? (totalBrierScore / totalPredictions).toFixed(4) : 0;
+      const avgBitsScore = totalPredictions > 0 ? (totalBitsScore / totalPredictions).toFixed(4) : 0;
+      const tipAccuracy = totalPredictions > 0 ? ((tipPoints / totalPredictions) * 100).toFixed(1) : 0;
       
       predictorStats.push({
         id: predictor.predictor_id,
         name: predictor.name,
-        correct,
-        incorrect,
-        accuracy
+        tipPoints,
+        totalPredictions,
+        tipAccuracy,
+        brierScore: avgBrierScore,
+        bitsScore: avgBitsScore
       });
     }
     
-    // Sort predictors by accuracy (highest first)
-    predictorStats.sort((a, b) => parseFloat(b.accuracy) - parseFloat(a.accuracy));
+    // Sort predictors by tip accuracy (highest first)
+    predictorStats.sort((a, b) => parseFloat(b.tipAccuracy) - parseFloat(a.tipAccuracy));
     
     // Format dates for completed matches
     completedMatches.forEach(match => {

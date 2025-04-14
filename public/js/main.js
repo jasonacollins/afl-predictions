@@ -1,3 +1,4 @@
+// Modified version of public/js/main.js
 document.addEventListener('DOMContentLoaded', function() {
   // Handle round selection
   const roundButtons = document.querySelectorAll('.round-button');
@@ -18,7 +19,6 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Update match list for selected round via AJAX
-// In public/js/main.js
 function fetchMatchesForRound(round) {
   // Get the current year from the URL or use the selected year
   const urlParams = new URLSearchParams(window.location.search);
@@ -70,6 +70,11 @@ function renderMatches(matches) {
     const hasResult = match.home_score !== null && match.away_score !== null;
     const prediction = getPredictionValue(match.match_id) || '';
     const awayPrediction = prediction !== '' ? (100 - prediction) : '';
+    const hasPrediction = prediction !== '';
+    
+    // Determine button class and text based on whether prediction exists
+    const buttonClass = hasPrediction ? 'save-prediction saved-state' : 'save-prediction';
+    const buttonText = hasPrediction ? 'Saved' : 'Save Prediction';
     
     html += `
       <div class="match-card ${hasResult ? 'has-result' : ''} ${isLocked ? 'locked' : ''}">
@@ -100,6 +105,7 @@ function renderMatches(matches) {
                   <input type="number" 
                          class="prediction-input home-prediction" 
                          data-match-id="${match.match_id}" 
+                         data-original-value="${prediction}"
                          min="0" max="100" 
                          value="${prediction}">
                   <span class="input-symbol">%</span>
@@ -119,8 +125,8 @@ function renderMatches(matches) {
                 </div>
               </div>
             </div>
-            <button class="save-prediction" data-match-id="${match.match_id}">
-              Save Prediction
+            <button class="${buttonClass}" data-match-id="${match.match_id}">
+              ${buttonText}
             </button>
           </div>
         ` : (isLocked && !hasResult) ? `
@@ -137,9 +143,7 @@ function renderMatches(matches) {
           <div class="prediction-result">
             ${prediction !== '' ? `
               <p>Your prediction: ${prediction}% for ${match.home_team}</p>
-              <p class="result-accuracy">
-                ${calculateAccuracy(match, prediction)}
-              </p>
+              ${calculateAccuracy(match, prediction)}
             ` : `
               <p>No prediction made</p>
             `}
@@ -166,14 +170,50 @@ function calculateAccuracy(match, prediction) {
   const awayWon = match.home_score < match.away_score;
   const tie = match.home_score === match.away_score;
   
-  const correct = 
-    (homeWon && prediction > 50) || 
-    (awayWon && prediction < 50) || 
-    (tie && prediction == 50);
+  // Calculate all metrics
+  const prob = parseInt(prediction) / 100;
+  const actualOutcome = homeWon ? 1 : (tie ? 0.5 : 0);
   
-  return correct ? 
-    '<span class="correct">Correct prediction! 🎉</span>' : 
-    '<span class="incorrect">Incorrect prediction 😔</span>';
+  // Calculate Brier score
+  const brierScore = Math.pow(prob - actualOutcome, 2).toFixed(4);
+  
+  // Calculate Bits score
+  const safeProb = Math.max(0.001, Math.min(0.999, prob));
+  let bitsScore;
+  if (homeWon) {
+    bitsScore = (1 + Math.log2(safeProb)).toFixed(4);
+  } else if (awayWon) {
+    bitsScore = (1 + Math.log2(1 - safeProb)).toFixed(4);
+  } else {
+    bitsScore = (1 + Math.log2(1 - Math.abs(0.5 - safeProb))).toFixed(4);
+  }
+  
+  // Calculate tip points
+  let tipPoints;
+  let tipClass;
+  
+  if (parseInt(prediction) === 50) {
+    if (tie) {
+      tipPoints = 1.0;
+      tipClass = "correct";
+    } else {
+      tipPoints = 0.5;
+      tipClass = "partial";
+    }
+  } else if ((homeWon && prediction > 50) || (awayWon && prediction < 50)) {
+    tipPoints = 1.0;
+    tipClass = "correct";
+  } else if (tie) {
+    tipPoints = 0.5;
+    tipClass = "partial";
+  } else {
+    tipPoints = 0.0;
+    tipClass = "incorrect";
+  }
+  
+  return `<div class="metrics-details">
+    <p>Tip: <span class="${tipClass}">${tipPoints.toFixed(1)}</span> | Brier: ${brierScore} | Bits: ${bitsScore}</p>
+  </div>`;
 }
 
 // Handle prediction inputs
@@ -181,12 +221,20 @@ function initPredictionInputs() {
   const homeInputs = document.querySelectorAll('.home-prediction');
   
   homeInputs.forEach(input => {
+    // Store the original value for comparison
+    const originalValue = input.value;
+    input.dataset.originalValue = originalValue;
+    
     input.addEventListener('input', function() {
       const matchId = this.dataset.matchId;
       const value = this.value.trim();
+      const originalValue = this.dataset.originalValue;
       
       // Find the corresponding away input
       const awayInput = document.querySelector(`.away-prediction[data-match-id="${matchId}"]`);
+      
+      // Find the corresponding save button
+      const saveButton = document.querySelector(`.save-prediction[data-match-id="${matchId}"]`);
       
       if (awayInput) {
         if (value === '' || isNaN(parseInt(value))) {
@@ -206,6 +254,28 @@ function initPredictionInputs() {
           }
           
           awayInput.value = 100 - homeValue;
+        }
+        
+        // Update button state based on whether the value has changed
+        if (saveButton) {
+          const hasPrediction = originalValue !== '';
+          const valueChanged = value !== originalValue;
+          
+          if (hasPrediction && valueChanged) {
+            // Existing prediction is being changed
+            saveButton.textContent = 'Update Prediction';
+            saveButton.classList.remove('saved-state');
+            saveButton.classList.add('update-state');
+          } else if (hasPrediction && !valueChanged) {
+            // Reverting to original prediction
+            saveButton.textContent = 'Saved';
+            saveButton.classList.add('saved-state');
+            saveButton.classList.remove('update-state');
+          } else if (!hasPrediction) {
+            // New prediction
+            saveButton.textContent = 'Save Prediction';
+            saveButton.classList.remove('saved-state', 'update-state');
+          }
         }
       }
     });
@@ -262,14 +332,24 @@ function savePrediction(matchId, probability, button) {
   .then(response => response.json())
   .then(data => {
     if (data.success) {
-      button.textContent = 'Saved!';
-      setTimeout(() => {
-        button.textContent = originalText;
-        button.disabled = false;
-      }, 1500);
+      // Update button to saved state
+      button.textContent = 'Saved';
+      button.classList.add('saved-state');
+      button.classList.remove('update-state');
       
       // Update stored prediction
       updateStoredPrediction(matchId, probability);
+      
+      // Update the original value in the input
+      const input = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
+      if (input) {
+        input.dataset.originalValue = probability;
+      }
+      
+      // Enable button after a delay
+      setTimeout(() => {
+        button.disabled = false;
+      }, 500);
     } else {
       button.textContent = data.error || 'Error!';
       setTimeout(() => {

@@ -29,7 +29,7 @@
     <div class="stats-card leaderboard">
       <h2 class="stats-heading">Predictor Leaderboard - <%= selectedYear %> Season</h2>
       
-      <% if (predictorStats.length === 0 || predictorStats.every(stat => stat.correct + stat.incorrect === 0)) { %>
+      <% if (predictorStats.length === 0 || predictorStats.every(stat => stat.totalPredictions === 0)) { %>
         <div class="no-stats">
           <p>No prediction results available yet for <%= selectedYear %>. Statistics will appear once matches are completed.</p>
         </div>
@@ -39,8 +39,10 @@
             <tr>
               <th>Rank</th>
               <th>Name</th>
-              <th>Accuracy</th>
-              <th>Correct</th>
+              <th>Tip Accuracy</th>
+              <th>Brier Score</th>
+              <th>Bits Score</th>
+              <th>Tips</th>
               <th>Total</th>
             </tr>
           </thead>
@@ -48,15 +50,16 @@
             <% 
               let rank = 1;
               predictorStats.forEach(stats => {
-                const total = stats.correct + stats.incorrect;
-                if (total > 0) {
+                if (stats.totalPredictions > 0) {
             %>
               <tr class="<%= stats.id === currentUser.id ? 'current-user' : '' %>">
                 <td><%= rank++ %></td>
                 <td><%= stats.name %> <%= stats.id === currentUser.id ? '(You)' : '' %></td>
-                <td><%= stats.accuracy %>%</td>
-                <td><%= stats.correct %></td>
-                <td><%= total %></td>
+                <td><%= stats.tipAccuracy %>%</td>
+                <td><%= stats.brierScore %></td>
+                <td><%= stats.bitsScore %></td>
+                <td><%= stats.tipPoints.toFixed(1) %></td>
+                <td><%= stats.totalPredictions %></td>
               </tr>
             <% 
                 }
@@ -64,6 +67,15 @@
             %>
           </tbody>
         </table>
+        
+        <div class="metrics-explanation">
+          <h3>Understanding the Metrics</h3>
+          <ul>
+            <li><strong>Tip Accuracy:</strong> Percentage of correct tips. For 50% predictions, half a point is awarded, or a full point if it was a draw.</li>
+            <li><strong>Brier Score:</strong> Measures accuracy of probabilistic predictions - lower is better (0 is perfect).</li>
+            <li><strong>Bits Score:</strong> Information-based scoring - higher is better.</li>
+          </ul>
+        </div>
       <% } %>
     </div>
     
@@ -103,13 +115,53 @@
                   <% 
                     const homeWon = match.home_score > match.away_score;
                     const awayWon = match.home_score < match.away_score;
-                    const correct = (homeWon && matchPrediction.home_win_probability > 50) || 
-                                  (awayWon && matchPrediction.home_win_probability < 50) || 
-                                  (match.home_score === match.away_score && matchPrediction.home_win_probability === 50);
+                    const tie = match.home_score === match.away_score;
+                    
+                    // Check for exact 50% prediction
+                    let tipResult = '';
+                    let tipClass = '';
+                    
+                    if (matchPrediction.home_win_probability === 50) {
+                      if (tie) {
+                        tipResult = 'Correct prediction! (Full point) 🎉';
+                        tipClass = 'correct';
+                      } else {
+                        tipResult = 'Half point for 50/50 prediction ⚖️';
+                        tipClass = 'partial';
+                      }
+                    } else if ((homeWon && matchPrediction.home_win_probability > 50) || 
+                               (awayWon && matchPrediction.home_win_probability < 50)) {
+                      tipResult = 'Correct prediction! 🎉';
+                      tipClass = 'correct';
+                    } else if (tie) {
+                      tipResult = 'Half point for draw ⚖️';
+                      tipClass = 'partial';
+                    } else {
+                      tipResult = 'Incorrect prediction 😔';
+                      tipClass = 'incorrect';
+                    }
+                    
+                    // Calculate additional metrics
+                    const probability = matchPrediction.home_win_probability / 100;
+                    const actualOutcome = homeWon ? 1 : (tie ? 0.5 : 0);
+                    const brierScore = Math.pow(probability - actualOutcome, 2).toFixed(4);
+                    
+                    let bitsScore;
+                    const safeProb = Math.max(0.001, Math.min(0.999, probability));
+                    if (homeWon) {
+                      bitsScore = (1 + Math.log2(safeProb)).toFixed(4);
+                    } else if (awayWon) {
+                      bitsScore = (1 + Math.log2(1 - safeProb)).toFixed(4);
+                    } else {
+                      bitsScore = (1 + Math.log2(1 - Math.abs(0.5 - safeProb))).toFixed(4);
+                    }
                   %>
-                  <p class="result-accuracy <%= correct ? 'correct' : 'incorrect' %>">
-                    <%= correct ? 'Correct prediction! 🎉' : 'Incorrect prediction 😔' %>
+                  <p class="result-accuracy <%= tipClass %>">
+                    <%= tipResult %>
                   </p>
+                  <div class="metrics-details">
+                    <p>Tip: <span class="<%= tipClass %>"><%= tipPoints.toFixed(1) %></span> | Brier: <%= brierScore %> | Bits: <%= bitsScore %></p>
+                  </div>
                 </div>
               <% } else { %>
                 <div class="no-prediction">
@@ -123,5 +175,38 @@
     </div>
   </div>
 </div>
+
+<style>
+  .metrics-explanation {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #f5f5f5;
+    border-radius: 8px;
+  }
+  
+  .metrics-explanation h3 {
+    margin-bottom: 10px;
+    font-size: 16px;
+  }
+  
+  .metrics-explanation ul {
+    padding-left: 20px;
+  }
+  
+  .metrics-explanation li {
+    margin-bottom: 5px;
+    font-size: 14px;
+  }
+  
+  .metrics-details {
+    margin-top: 8px;
+    font-size: 13px;
+    color: #666;
+  }
+  
+  .partial {
+    color: #ff9800;
+  }
+</style>
 
 <%- include('partials/footer') %>

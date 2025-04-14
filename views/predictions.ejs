@@ -59,6 +59,11 @@
           const hasResult = match.home_score !== null && match.away_score !== null;
           const prediction = predictions[match.match_id] || '';
           const awayPrediction = prediction !== '' ? (100 - prediction) : '';
+          const hasPrediction = prediction !== '';
+          
+          // Determine button class and text based on whether prediction exists
+          const buttonClass = hasPrediction ? 'save-prediction saved-state' : 'save-prediction';
+          const buttonText = hasPrediction ? 'Saved' : 'Save Prediction';
         %>
         <div class="match-card <%= hasResult ? 'has-result' : '' %> <%= isLocked ? 'locked' : '' %>">
           <div class="match-header">
@@ -90,6 +95,7 @@
                     <input type="number" 
                            class="prediction-input home-prediction" 
                            data-match-id="<%= match.match_id %>" 
+                           data-original-value="<%= prediction %>"
                            min="0" max="100" 
                            value="<%= prediction %>">
                     <span class="input-symbol">%</span>
@@ -110,8 +116,8 @@
                 </div>
               </div>
               
-              <button class="save-prediction button primary-button" data-match-id="<%= match.match_id %>">
-                Save Prediction
+              <button class="<%= buttonClass %>" data-match-id="<%= match.match_id %>">
+                <%= buttonText %>
               </button>
             </div>
           <% } else if (isLocked && !hasResult) { %>
@@ -131,12 +137,54 @@
                 <% 
                   const homeWon = match.home_score > match.away_score;
                   const awayWon = match.home_score < match.away_score;
-                  const correct = (homeWon && prediction > 50) || (awayWon && prediction < 50) || 
-                                 (match.home_score === match.away_score && prediction === 50);
+                  const tie = match.home_score === match.away_score;
+                  
+                  // Calculate tip points
+                  let tipPoints = 0;
+                  let tipClass = "";
+                  
+                  if (parseInt(prediction) === 50) {
+                    if (tie) {
+                      tipPoints = 1.0;
+                      tipClass = "correct";
+                    } else {
+                      tipPoints = 0.5;
+                      tipClass = "partial";
+                    }
+                  } else if ((homeWon && parseInt(prediction) > 50) || (awayWon && parseInt(prediction) < 50)) {
+                    tipPoints = 1.0;
+                    tipClass = "correct";
+                  } else if (tie) {
+                    tipPoints = 0.5;
+                    tipClass = "partial";
+                  } else {
+                    tipPoints = 0.0;
+                    tipClass = "incorrect";
+                  }
+                  
+                  // Calculate Brier score
+                  const prob = parseInt(prediction) / 100;
+                  const actualOutcome = homeWon ? 1 : (tie ? 0.5 : 0);
+                  const brierScore = Math.pow(prob - actualOutcome, 2).toFixed(4);
+                  
+                  // Calculate Bits score
+                  let bitsScore = "0.0000";
+                  try {
+                    const safeProb = Math.max(0.001, Math.min(0.999, prob));
+                    if (homeWon) {
+                      bitsScore = (1 + Math.log2(safeProb)).toFixed(4);
+                    } else if (awayWon) {
+                      bitsScore = (1 + Math.log2(1 - safeProb)).toFixed(4);
+                    } else {
+                      bitsScore = (1 + Math.log2(1 - Math.abs(0.5 - safeProb))).toFixed(4);
+                    }
+                  } catch (e) {
+                    console.error("Error calculating bits score:", e);
+                  }
                 %>
-                <p class="result-accuracy <%= correct ? 'correct' : 'incorrect' %>">
-                  <%= correct ? 'Correct prediction! 🎉' : 'Incorrect prediction 😔' %>
-                </p>
+                <div class="metrics-details">
+                  <p>Tip: <span class="<%= tipClass %>"><%= tipPoints.toFixed(1) %></span> | Brier: <%= brierScore %> | Bits: <%= bitsScore %></p>
+                </div>
               <% } else { %>
                 <p>No prediction made</p>
               <% } %>

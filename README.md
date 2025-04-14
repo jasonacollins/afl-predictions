@@ -1,4 +1,4 @@
-# AFL Predictions
+## AFL Predictions
 
 A web application for predicting and tracking AFL match results.
 
@@ -11,7 +11,53 @@ This application allows users to make predictions for Australian Football League
 - **Production Environment**: `/var/www/afl-predictions`
 - **Database**: SQLite (sessions stored in `data/sessions.db`)
 
-## Setup
+## Docker Setup
+
+### Prerequisites
+
+- Docker
+- Docker Compose
+
+### Installation and Deployment
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/jasonacollins/afl-predictions.git
+   cd afl-predictions
+   ```
+
+2. Build and start the Docker container:
+   ```bash
+   docker-compose up -d
+   ```
+
+3. The application will be available at http://localhost:3001
+
+### Managing the Docker Deployment
+
+- **View logs**:
+  ```bash
+  docker-compose logs
+  ```
+
+- **Stop the containers**:
+  ```bash
+  docker-compose down
+  ```
+
+- **After making code changes**, rebuild and restart:
+  ```bash
+  docker-compose down
+  docker-compose build
+  docker-compose up -d
+  ```
+
+- **For quick restarts** without rebuilding:
+  ```bash
+  docker-compose restart
+  ```
+
+## Traditional Setup (without Docker)
 
 ### Prerequisites
 
@@ -20,21 +66,20 @@ This application allows users to make predictions for Australian Football League
 
 ### Installation
 
-1. Clone the repository:
+1. Install dependencies:
    ```bash
-   git clone https://github.com/jasonacollins/afl-predictions.git
-   ```
-
-2. Install dependencies:
-   ```bash
-   cd afl-predictions
    npm install
    ```
 
-3. Configure environment variables:
+2. Configure environment variables:
    ```bash
    cp .env.example .env
    # Edit .env with appropriate values
+   ```
+
+3. Run database initialization:
+   ```bash
+   npm run import
    ```
 
 ### Development
@@ -43,7 +88,7 @@ This application allows users to make predictions for Australian Football League
 npm run dev
 ```
 
-### Production Deployment
+### Production Deployment (PM2)
 
 1. Pull latest changes:
    ```bash
@@ -58,36 +103,5 @@ npm run dev
 
 3. Restart the application:
    ```bash
-   pm2 restart afl-predictions  # Assuming PM2 is used
+   pm2 restart afl-predictions
    ```
-
-## Repository Access
-
-This is a private repository. To access it:
-
-1. Request access from the repository owner
-2. Set up authentication using a Personal Access Token:
-   ```bash
-   git remote set-url origin https://username:your_token@github.com/jasonacollins/afl-predictions.git
-   ```
-
-## File Structure
-
-- `/data` - Contains database files
-  - Note: `sessions.db` should be in `.gitignore` as it contains environment-specific data
-- `/public` - Static assets
-- `/views` - Frontend templates
-- `/routes` - API routes
-- `/models` - Data models
-
-## Database
-
-The application uses SQLite for data storage. Database files are located in the `/data` directory.
-
-## License
-
-[Add appropriate license information]
-
-## Contact
-
-[Your contact information]
