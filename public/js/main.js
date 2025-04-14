@@ -279,11 +279,17 @@ function initPredictionInputs() {
           // If home is empty or not a number, clear away as well
           awayInput.value = '';
           
+          // Remove team selection
+          removeTeamSelection(matchId);
+          
           // Update button to show "Clear Prediction" state
           if (saveButton && originalValue !== '') {
             saveButton.textContent = 'Clear Prediction';
             saveButton.classList.remove('saved-state', 'update-state');
             saveButton.classList.add('delete-state');
+            
+            // Reset tipped team
+            delete saveButton.dataset.tippedTeam;
           }
         } else {
           // Otherwise calculate the away percentage
@@ -319,6 +325,30 @@ function initPredictionInputs() {
               // New prediction
               saveButton.textContent = 'Save Prediction';
               saveButton.classList.remove('saved-state', 'update-state', 'delete-state');
+            }
+            
+            // Handle team selection for 50% predictions
+            const teamSelectionContainer = document.getElementById(`team-selection-${matchId}`);
+            // Inside the if block for homeValue === 50
+            if (homeValue === 50) {
+              // If not already visible, add team selection
+              if (!teamSelectionContainer) {
+                // Get the match card containing this input
+                const matchCard = input.closest('.match-card');
+                
+                if (matchCard) {
+                  // Get team names from the match card
+                  const homeTeam = matchCard.querySelector('.home-team').textContent;
+                  const awayTeam = matchCard.querySelector('.away-team').textContent;
+                  
+                  addTeamSelection(matchId, homeTeam, awayTeam, saveButton);
+                }
+              }
+            } else {
+              // Remove team selection for non-50% predictions
+              removeTeamSelection(matchId);
+              // Clear tipped team data
+              delete saveButton.dataset.tippedTeam;
             }
           }
         }
@@ -367,7 +397,6 @@ function addTeamSelection(matchId, homeTeam, awayTeam, saveButton) {
   homeButton.click();
 }
 
-// Helper function to remove team selection UI
 function removeTeamSelection(matchId) {
   const teamSelection = document.getElementById(`team-selection-${matchId}`);
   if (teamSelection) {
@@ -385,31 +414,31 @@ function initSavePredictionButtons() {
       const input = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
       
       if (input) {
-        const probability = input.value.trim();
+        // Check if this is the Clear Prediction button
+        const isDeleteAction = this.classList.contains('delete-state');
         
-        // Validate input
-        if (probability === '') {
-          alert('Please enter a prediction percentage');
-          return;
-        }
+        // If it's clear prediction, allow empty value
+        const probability = isDeleteAction ? "" : input.value.trim();
         
-        const probabilityNum = parseInt(probability);
-        if (isNaN(probabilityNum) || probabilityNum < 0 || probabilityNum > 100) {
-          alert('Please enter a valid percentage between 0 and 100');
-          return;
+        // Validate input only if it's not a delete action and not an empty string
+        if (!isDeleteAction && probability !== '') {
+          const probabilityNum = parseInt(probability);
+          if (isNaN(probabilityNum) || probabilityNum < 0 || probabilityNum > 100) {
+            alert('Please enter a valid percentage between 0 and 100');
+            return;
+          }
         }
         
         // For 50% predictions, ensure a team is selected
-        if (probabilityNum === 50) {
+        if (!isDeleteAction && probability !== '' && parseInt(probability) === 50) {
           const tippedTeam = this.dataset.tippedTeam;
           if (!tippedTeam) {
             alert('Please select which team you think will win');
             return;
           }
-          savePrediction(matchId, probabilityNum, this);
-        } else {
-          savePrediction(matchId, probabilityNum, this);
         }
+        
+        savePrediction(matchId, probability, this);
       }
     });
   });
