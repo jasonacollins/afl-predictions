@@ -544,60 +544,69 @@
 
 <script>
   // Handle API refresh button
-  document.getElementById('refreshApiButton').addEventListener('click', function() {
-    document.getElementById('refreshApiModal').style.display = 'block';
+  document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded, setting up event listeners');
+    
+    const refreshButton = document.getElementById('refreshApiButton');
+    const refreshForm = document.getElementById('refreshApiForm');
+    
+    console.log('Button found:', !!refreshButton);
+    console.log('Form found:', !!refreshForm);
+    
+    if (refreshButton) {
+      refreshButton.addEventListener('click', function() {
+        document.getElementById('refreshApiModal').style.display = 'block';
+      });
+    }
+    
+    if (refreshForm) {
+      refreshForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const year = document.getElementById('refreshYear').value;
+        const statusDiv = document.getElementById('refreshStatus');
+        const submitButton = this.querySelector('button[type="submit"]');
+        
+        // Update UI
+        statusDiv.innerHTML = '<p class="alert success">Refreshing data from API, please wait...</p>';
+        submitButton.disabled = true;
+        
+        // Make API request
+        fetch('/admin/api-refresh', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ year }),
+        })
+        .then(response => {
+          console.log('Response status:', response.status);
+          return response.json();
+        })
+        .then(data => {
+          if (data.success) {
+            statusDiv.innerHTML = `<p class="alert success">${data.message}</p>`;
+          } else {
+            statusDiv.innerHTML = `<p class="alert error">${data.message}</p>`;
+          }
+          
+          // Re-enable the button after 3 seconds
+          setTimeout(() => {
+            submitButton.disabled = false;
+          }, 3000);
+        })
+        .catch(error => {
+          console.error('Fetch error:', error);
+          statusDiv.innerHTML = `<p class="alert error">Error: ${error.message}</p>`;
+          submitButton.disabled = false;
+        });
+      });
+    }
   });
   
   function closeRefreshModal() {
     document.getElementById('refreshApiModal').style.display = 'none';
   }
-  
-  // Handle refresh form submission
-  document.getElementById('refreshApiForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    
-    const year = document.getElementById('refreshYear').value;
-    const statusDiv = document.getElementById('refreshStatus');
-    const submitButton = this.querySelector('button[type="submit"]');
-    
-    // Update UI
-    statusDiv.innerHTML = '<p class="alert success">Refreshing data from API, please wait...</p>';
-    submitButton.disabled = true;
-    
-    // Make API request
-    fetch('/admin/refresh-data', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ year }),
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.success) {
-        statusDiv.innerHTML = `<p class="alert success">${data.message}</p>`;
-      } else {
-        statusDiv.innerHTML = `<p class="alert error">${data.message}</p>`;
-      }
-      
-      // Re-enable the button after 3 seconds
-      setTimeout(() => {
-        submitButton.disabled = false;
-      }, 3000);
-    })
-    .catch(error => {
-      statusDiv.innerHTML = `<p class="alert error">Error: ${error.message}</p>`;
-      submitButton.disabled = false;
-    });
-  });
-  
-  // Close modal when clicking outside of it
-  window.addEventListener('click', function(e) {
-    const modal = document.getElementById('refreshApiModal');
-    if (e.target === modal) {
-      closeRefreshModal();
-    }
-  });
 </script>
 
 <%- include('partials/footer') %>
