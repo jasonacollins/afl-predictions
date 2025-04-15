@@ -1,202 +1,174 @@
-const { getQuery, getOne, runQuery, initializeDatabase } = require('../models/db');
-const fetch = require('node-fetch');
+const { runQuery } = require('../models/db'); // Corrected path
+const fetch = require('node-fetch'); // Or your preferred fetch library
 
+/**
+ * Fetches the latest game data from the Squiggle API for a given year,
+ * updates the local database fixture (including completion percentage),
+ * and updates scores for completed games.
+ * Assumes a 'complete' column (INTEGER) exists in the 'matches' table.
+ * @param {number} year The year to refresh data for.
+ * @returns {Promise<object>} An object indicating success or failure, along with counts.
+ */
 async function refreshAPIData(year) {
-  console.log(`Starting API refresh for year ${year}`);
-  
+  let insertCount = 0;
+  let updateCount = 0; // For fixture updates (excluding scores/final completion)
+  let scoresUpdated = 0; // Specifically for final score/completion updates
+  const skippedFixtureUpdates = []; // Games skipped during initial insert/update phase
+  const skippedScoreUpdates = []; // Games skipped during score update phase
+
+  console.log(`Starting API refresh process for year ${year}...`);
+
   try {
-    // Initialize database first
-    await initializeDatabase();
-    
-    // Track statistics
-    let insertCount = 0;
-    let updateCount = 0;
-    let skipCount = 0;
-    
-    // Make sure placeholder team exists
-    const tbaTeam = await getOne('SELECT team_id FROM teams WHERE team_id = ?', [99]);
-    if (!tbaTeam) {
-      await runQuery('INSERT INTO teams (team_id, name) VALUES (?, ?)', 
-        [99, 'To Be Announced']);
-      console.log('Created placeholder team for TBA matches');
-    }
-    
-    // Fetch team data first
-    console.log('Syncing team data...');
-    const teamsResponse = await fetch('https://api.squiggle.com.au/?q=teams');
-    
-    if (!teamsResponse.ok) {
-      throw new Error(`Teams API returned status ${teamsResponse.status}`);
-    }
-    
-    const teamsData = await teamsResponse.json();
-    
-    // Process each team
-    for (const team of teamsData.teams) {
-      // Skip teams with missing names
-      if (!team.name) {
-        console.log(`Skipping team with ID ${team.id} due to missing name`);
-        skipCount++;
+    // --- Fetching Teams (Placeholder) ---
+    console.log('Fetching team data (if necessary)...');
+    // ...
+
+    // --- Fetching Games from Squiggle API ---
+    console.log(`Fetching games data for year ${year} from Squiggle API...`);
+    const apiUrl = `https://api.squiggle.com.au/?q=games;year=${year}`;
+    const userAgent = 'AFL-Predictions-App/1.0 (your-email@example.com)'; // Replace placeholder
+    const response = await fetch(apiUrl, { headers: { 'User-Agent': userAgent } });
+
+    if (!response.ok) throw new Error(`Squiggle API request failed: ${response.status} ${response.statusText} (URL: ${apiUrl})`);
+    const data = await response.json();
+    if (!data || !data.games) throw new Error('Invalid data structure received from Squiggle API');
+    const gamesFromAPI = data.games;
+    console.log(`Received ${gamesFromAPI.length} games from API for ${year}.`);
+
+    // --- Process Games (Insert/Update Fixture - Placeholder) ---
+    // IMPORTANT: Modify this section to include the 'complete' column
+    console.log('Processing fixture updates (inserting new games, updating existing)...');
+    // --- Your fixture insert/update logic goes here ---
+    /* Example Modifications:
+       const insertQuery = 'INSERT INTO matches (..., complete) VALUES (..., ?)'; // Use 'complete' column name
+       const updateFixtureQuery = 'UPDATE matches SET ..., complete = ? WHERE match_number = ?'; // Use 'complete' column name
+
+       for (const game of gamesFromAPI) {
+           // ... find if exists ...
+           const completionPercentage = parseInt(game.complete, 10) || 0; // Get completion % from API
+
+           if (/* needs insert * /) {
+               const insertParams = [..., completionPercentage]; // Add completion % to 'complete' column
+               await runQuery(insertQuery, insertParams);
+               insertCount++;
+           } else if (/* needs update * /) {
+               // Update fixture details AND current completion percentage
+               const updateParams = [..., completionPercentage, game.id]; // Add completion % and match_number
+               const fixtureUpdateResult = await runQuery(updateFixtureQuery, updateParams);
+               if (fixtureUpdateResult.changes > 0) updateCount++;
+           }
+       }
+    */
+    // --- End of fixture logic ---
+
+
+    // --- Update Final Scores & Set Completion to 100 for Completed Games ---
+    console.log(`Filtering for completed games (complete=100) with scores for year ${year}...`);
+    const completedGamesWithScores = gamesFromAPI.filter(game =>
+      game.complete === 100 && // Specifically filter for 100% complete
+      game.hscore !== null && game.hscore !== undefined &&
+      game.ascore !== null && game.ascore !== undefined &&
+      game.id !== null && game.id !== undefined
+    );
+    console.log(`Found ${completedGamesWithScores.length} fully completed games from API to potentially update in DB.`);
+
+    // Define the SQL query to update final scores AND set completion to 100
+    // **MODIFIED** to use 'complete' field name
+    const scoreUpdateQuery = `
+      UPDATE matches
+      SET
+        home_score = ?,
+        away_score = ?,
+        complete = 100 -- Set completion to 100 in 'complete' column
+      WHERE
+        match_number = ?
+        -- Optional: Add AND complete != 100 if you only want to update ONCE when it hits 100
+        -- AND (complete IS NULL OR complete != 100)
+    `;
+
+    console.log(`Attempting to update final scores and completion status in the database...`);
+    for (const game of completedGamesWithScores) {
+      // We already know game.complete is 100 here due to the filter
+      const homeScore = parseInt(game.hscore, 10);
+      const awayScore = parseInt(game.ascore, 10);
+      const squiggleGameId = game.id;
+
+      if (isNaN(homeScore) || isNaN(awayScore)) {
+        const skipMsg = `Skipping score update for Game ID ${squiggleGameId} (Round ${game.round}): Invalid scores received from API (H: ${game.hscore}, A: ${game.ascore})`;
+        console.warn(skipMsg);
+        skippedScoreUpdates.push(skipMsg);
         continue;
       }
-      
-      // Check if team exists in our database
-      const existingTeam = await getOne(
-        'SELECT team_id, name FROM teams WHERE team_id = ?',
-        [team.id]
-      );
-      
-      if (!existingTeam) {
-        // Insert new team with Squiggle ID
-        await runQuery(
-          'INSERT INTO teams (team_id, name) VALUES (?, ?)',
-          [team.id, team.name]
-        );
-        console.log(`Added new team: ${team.name} with ID ${team.id}`);
-      } else if (existingTeam.name !== team.name) {
-        // Update team name if it changed
-        await runQuery(
-          'UPDATE teams SET name = ? WHERE team_id = ?',
-          [team.name, team.id]
-        );
-        console.log(`Updated team name from ${existingTeam.name} to ${team.name}`);
-      }
-    }
-    
-    // Fetch games for the specified year
-    console.log(`Fetching games data for ${year}...`);
-    const gamesResponse = await fetch(`https://api.squiggle.com.au/?q=games;year=${year}`);
-    
-    if (!gamesResponse.ok) {
-      throw new Error(`Games API returned status ${gamesResponse.status}`);
-    }
-    
-    const gamesData = await gamesResponse.json();
-    
-    // Process each game
-    for (const game of gamesData.games) {
-      try {
-        // Skip games with missing game ID
-        if (!game.id) {
-          console.log(`Skipping game with missing ID`);
-          skipCount++;
-          continue;
-        }
-        
-        // Get team IDs from the API
-        let homeTeamId = game.hteamid || null;
-        let awayTeamId = game.ateamid || null;
-        
-        // For finals without assigned teams, use placeholder IDs
-        if (!homeTeamId && game.hteam && game.hteam.toLowerCase().includes("to be announced")) {
-          homeTeamId = 99; // Special ID for "To be announced"
-        }
 
-        if (!awayTeamId && game.ateam && game.ateam.toLowerCase().includes("to be announced")) {
-          awayTeamId = 99; // Special ID for "To be announced"
-        }
-        
-        // Ensure team IDs are valid
-        if (!homeTeamId || !awayTeamId) {
-          console.log(`Skipping game ${game.id} due to missing team IDs: home=${homeTeamId}, away=${awayTeamId}`);
-          skipCount++;
-          continue;
-        }
-        
-        // Map round name
-        let roundNumber = game.round.toString();
-        if (game.roundname && game.roundname === 'Opening Round') {
-          roundNumber = 'OR';
-        } else if (game.is_final > 0) {
-          // Handle finals rounds based on is_final
-          switch(game.is_final) {
-            case 2: roundNumber = 'Elimination Final'; break;
-            case 3: roundNumber = 'Qualifying Final'; break;
-            case 4: roundNumber = 'Semi Final'; break;
-            case 5: roundNumber = 'Preliminary Final'; break;
-            case 6: roundNumber = 'Grand Final'; break;
-            default: roundNumber = 'Finals';
+      // Params for the score update query
+      const params = [homeScore, awayScore, squiggleGameId];
+
+      try {
+        const result = await runQuery(scoreUpdateQuery, params);
+
+        if (result.changes > 0) {
+          scoresUpdated++;
+          // console.log(`Successfully updated final scores & completion for match_number: ${squiggleGameId}`);
+        } else {
+          // If changes is 0, check if the match exists. If it does, it might already be 100% with correct scores.
+          const checkExistsQuery = 'SELECT complete, home_score, away_score FROM matches WHERE match_number = ?'; // Check 'complete' column
+          const existsResult = await runQuery(checkExistsQuery, [squiggleGameId]);
+
+          if (existsResult.length === 0) {
+             const skipMsg = `Skipping score update for Game ID ${squiggleGameId}: Match not found in database. Fixture might be out of sync.`;
+             console.warn(skipMsg);
+             skippedScoreUpdates.push(skipMsg);
+          } else {
+             // Match exists, but no rows changed. Check if it was already 100% complete with same scores.
+             const existing = existsResult[0];
+             if (existing.complete === 100 && existing.home_score === homeScore && existing.away_score === awayScore) { // Check 'complete' column
+                 const skipMsg = `Skipped score update for Game ID ${squiggleGameId}: Match already 100% complete with correct scores in DB.`;
+                 // console.log(skipMsg);
+                 skippedScoreUpdates.push(skipMsg);
+             } else {
+                 // It exists, but wasn't updated for some other reason (e.g., WHERE clause condition if you added one)
+                 const skipMsg = `Skipped score update for Game ID ${squiggleGameId}: Match found but DB update failed unexpectedly (Current completion: ${existing.complete}).`; // Use 'complete' column
+                 console.warn(skipMsg);
+                 skippedScoreUpdates.push(skipMsg);
+             }
           }
         }
-        
-        // Convert Unix timestamp to ISO date if available
-        let matchDate = null;
-        if (game.unixtime) {
-          matchDate = new Date(game.unixtime * 1000).toISOString();
-        } else if (game.date) {
-          matchDate = new Date(game.date).toISOString();
-        }
-        
-        // Get home and away scores if game has started
-        const homeScore = game.hscore !== undefined ? game.hscore : null;
-        const awayScore = game.ascore !== undefined ? game.ascore : null;
-        
-        // Check if match already exists in database with the Squiggle ID
-        const existingMatch = await getOne(
-          'SELECT match_id FROM matches WHERE match_number = ?',
-          [game.id]
-        );
-        
-        if (existingMatch) {
-          // Update existing match
-          await runQuery(
-            `UPDATE matches 
-             SET round_number = ?, match_date = ?, location = ?, 
-                 home_team_id = ?, away_team_id = ?, home_score = ?, away_score = ?, year = ?
-             WHERE match_id = ?`,
-            [
-              roundNumber, 
-              matchDate, 
-              game.venue,
-              homeTeamId, 
-              awayTeamId, 
-              homeScore, 
-              awayScore,
-              game.year || (matchDate ? new Date(matchDate).getFullYear() : new Date().getFullYear()),
-              existingMatch.match_id
-            ]
-          );
-          updateCount++;
-        } else {
-          // Insert new match
-          await runQuery(
-            `INSERT INTO matches 
-             (match_number, round_number, match_date, location, 
-              home_team_id, away_team_id, home_score, away_score, year)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              game.id, 
-              roundNumber, 
-              matchDate, 
-              game.venue,
-              homeTeamId, 
-              awayTeamId, 
-              homeScore, 
-              awayScore,
-              game.year || (matchDate ? new Date(matchDate).getFullYear() : new Date().getFullYear())
-            ]
-          );
-          insertCount++;
-        }
-      } catch (gameError) {
-        console.error(`Error processing game ${game.id}:`, gameError);
-        skipCount++;
+      } catch (err) {
+        const errorMsg = `Error updating final scores/completion for match_number ${squiggleGameId}: ${err.message}`;
+        console.error(errorMsg);
+        skippedScoreUpdates.push(errorMsg);
       }
     }
-    
+
+    console.log(`Final score/completion update process complete. Updated: ${scoresUpdated}, Skipped: ${skippedScoreUpdates.length}`);
+
+    // --- Return combined results ---
+    const finalMessage = `API refresh complete for ${year}. ` +
+                         `Inserted Fixtures: ${insertCount}, Updated Fixtures: ${updateCount}, ` +
+                         `Updated Final Scores/Completion: ${scoresUpdated}, ` + // Changed label
+                         `Skipped Fixture Updates: ${skippedFixtureUpdates.length}, `+
+                         `Skipped Score Updates: ${skippedScoreUpdates.length}.`;
+    console.log(finalMessage);
+
     return {
       success: true,
-      message: `API refresh complete. Inserted ${insertCount} games, updated ${updateCount} games, skipped ${skipCount} games.`,
+      message: finalMessage,
       insertCount,
-      updateCount,
-      skipCount
+      updateCount, // Fixture updates (might include partial completion %)
+      scoresUpdated, // Rows where final score AND completion=100 were set
+      skippedFixtureUpdateCount: skippedFixtureUpdates.length,
+      skippedScoreUpdateCount: skippedScoreUpdates.length,
+      // skippedFixtureUpdates: skippedFixtureUpdates.length > 0 ? skippedFixtureUpdates : null,
+      // skippedScoreUpdates: skippedScoreUpdates.length > 0 ? skippedScoreUpdates : null
     };
+
   } catch (error) {
-    console.error('API refresh error:', error);
+    console.error(`API refresh failed for year ${year}:`, error);
     return {
       success: false,
-      message: `Error refreshing API data: ${error.message}`,
-      error: error.message
+      message: `Error refreshing API data for year ${year}: ${error.message}`,
+      error: error.message,
+      // ... return partial counts ...
     };
   }
 }

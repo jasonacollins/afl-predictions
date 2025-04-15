@@ -545,13 +545,8 @@
 <script>
   // Handle API refresh button
   document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM loaded, setting up event listeners');
-    
     const refreshButton = document.getElementById('refreshApiButton');
     const refreshForm = document.getElementById('refreshApiForm');
-    
-    console.log('Button found:', !!refreshButton);
-    console.log('Form found:', !!refreshForm);
     
     if (refreshButton) {
       refreshButton.addEventListener('click', function() {
@@ -585,7 +580,21 @@
         })
         .then(data => {
           if (data.success) {
-            statusDiv.innerHTML = `<p class="alert success">${data.message}</p>`;
+            let statusHTML = `<p class="alert success">${data.message}</p>`;
+            
+            // Add skipped games information if available
+            if (data.skippedGames && data.skippedGames.length > 0) {
+              statusHTML += '<div class="skipped-games">';
+              statusHTML += '<h4>Skipped Games:</h4>';
+              statusHTML += '<ul>';
+              data.skippedGames.forEach(game => {
+                statusHTML += `<li>${game}</li>`;
+              });
+              statusHTML += '</ul>';
+              statusHTML += '</div>';
+            }
+            
+            statusDiv.innerHTML = statusHTML;
           } else {
             statusDiv.innerHTML = `<p class="alert error">${data.message}</p>`;
           }
