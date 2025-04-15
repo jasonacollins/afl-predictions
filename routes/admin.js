@@ -301,7 +301,7 @@ router.get('/stats', async (req, res) => {
   }
 });
 
-// Update the export route in routes/admin.js
+// Modified export route from admin.js
 router.get('/export/predictions', async (req, res) => {
   try {
     // Get all predictions with related data
@@ -312,6 +312,7 @@ router.get('/export/predictions', async (req, res) => {
         p.predictor_id,
         p.home_win_probability,
         p.prediction_time,
+        p.tipped_team,
         pr.name as predictor_name,
         m.match_number,
         m.round_number,
@@ -333,7 +334,7 @@ router.get('/export/predictions', async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename=afl-predictions-export.csv');
     
     // Create CSV header with new metrics columns
-    let csvData = 'Predictor,Round,Match Number,Match Date,Home Team,Away Team,Home Win %,Away Win %,Home Score,Away Score,Correct,Tip Points,Brier Score,Bits Score\n';
+    let csvData = 'Predictor,Round,Match Number,Match Date,Home Team,Away Team,Home Win %,Away Win %,Tipped Team,Home Score,Away Score,Correct,Tip Points,Brier Score,Bits Score\n';
     
     // Add prediction rows
     predictions.forEach(prediction => {
@@ -344,35 +345,38 @@ router.get('/export/predictions', async (req, res) => {
       const tie = prediction.home_score !== null && prediction.away_score !== null && 
                 prediction.home_score === prediction.away_score;
       
+      // Default tipped team for 50% predictions if not stored
+      let tippedTeam = prediction.tipped_team || 'home';
+      
       let correct = '';
       let tipPoints = 0;
       let brierScore = '';
       let bitsScore = '';
       
       if (prediction.home_score !== null && prediction.away_score !== null) {
-        // Basic correctness
-        const correctPrediction = 
-          (homeWon && prediction.home_win_probability > 50) || 
-          (awayWon && prediction.home_win_probability < 50) || 
-          (tie && prediction.home_win_probability === 50);
-          
-        correct = correctPrediction ? 'Yes' : 'No';
-        
-        // Calculate tip points
+        // For 50% predictions, use the tipped team to determine correctness
         if (prediction.home_win_probability === 50) {
-          // Half point for 50% prediction (full point if it was a tie)
-          tipPoints = tie ? 1.0 : 0.5;
-        } else if (homeWon && prediction.home_win_probability > 50) {
-          // Correctly predicted home team win
-          tipPoints = 1.0;
-        } else if (awayWon && prediction.home_win_probability < 50) {
-          // Correctly predicted away team win
-          tipPoints = 1.0;
-        } else if (tie) {
-          // Half point for any prediction in case of a tie (unless exactly 50%)
-          tipPoints = 0.5;
+          if (tie) {
+            correct = 'No';
+            tipPoints = 0;
+          } else {
+            const correctPrediction = (homeWon && tippedTeam === 'home') || (awayWon && tippedTeam === 'away');
+            correct = correctPrediction ? 'Yes' : 'No';
+            tipPoints = correctPrediction ? 1.0 : 0.0;
+          }
         } else {
-          tipPoints = 0.0;
+          // For other predictions, use standard logic
+          const correctPrediction = 
+            (homeWon && prediction.home_win_probability > 50) || 
+            (awayWon && prediction.home_win_probability < 50);
+            
+          correct = correctPrediction ? 'Yes' : 'No';
+          
+          if (tie) {
+            tipPoints = 0;
+          } else {
+            tipPoints = correctPrediction ? 1.0 : 0.0;
+          }
         }
         
         // Calculate Brier score
@@ -407,6 +411,11 @@ router.get('/export/predictions', async (req, res) => {
         console.error('Error formatting date:', matchDate);
       }
       
+      // Show "Home" or "Away" instead of 'home' or 'away'
+      const displayTippedTeam = prediction.home_win_probability === 50 
+        ? (tippedTeam === 'home' ? prediction.home_team : prediction.away_team)
+        : '';
+      
       csvData += `"${prediction.predictor_name}",`;
       csvData += `"${prediction.round_number}",`;
       csvData += `${prediction.match_number},`;
@@ -415,6 +424,7 @@ router.get('/export/predictions', async (req, res) => {
       csvData += `"${prediction.away_team}",`;
       csvData += `${prediction.home_win_probability},`;
       csvData += `${100 - prediction.home_win_probability},`;
+      csvData += `"${displayTippedTeam}",`;
       csvData += `${prediction.home_score || ''},`;
       csvData += `${prediction.away_score || ''},`;
       csvData += `"${correct}",`;

@@ -57,9 +57,21 @@
         <% 
           const isLocked = match.isLocked;
           const hasResult = match.home_score !== null && match.away_score !== null;
-          const prediction = predictions[match.match_id] || '';
-          const awayPrediction = prediction !== '' ? (100 - prediction) : '';
-          const hasPrediction = prediction !== '';
+          let prediction = null;
+          let tippedTeam = 'home';
+          
+          // Check if prediction exists and determine its format
+          if (predictions[match.match_id] !== undefined) {
+            if (typeof predictions[match.match_id] === 'object') {
+              prediction = predictions[match.match_id].probability || null;
+              tippedTeam = predictions[match.match_id].tipped_team || 'home';
+            } else {
+              prediction = predictions[match.match_id];
+            }
+          }
+          
+          const awayPrediction = prediction !== null ? (100 - prediction) : '';
+          const hasPrediction = prediction !== null;
           
           // Determine button class and text based on whether prediction exists
           const buttonClass = hasPrediction ? 'save-prediction saved-state' : 'save-prediction';
@@ -116,15 +128,40 @@
                 </div>
               </div>
               
-              <button class="<%= buttonClass %>" data-match-id="<%= match.match_id %>">
+              <% if (parseInt(prediction) === 50) { %>
+                <div id="team-selection-<%= match.match_id %>" class="team-selection">
+                  <p>Who do you think will win?</p>
+                  <div class="team-buttons">
+                    <button type="button" 
+                            class="team-button home-team-button <%= tippedTeam === 'home' ? 'selected' : '' %>" 
+                            data-team="home"
+                            onclick="selectTeam('<%= match.match_id %>', 'home')">
+                      <%= match.home_team %>
+                    </button>
+                    <button type="button" 
+                            class="team-button away-team-button <%= tippedTeam === 'away' ? 'selected' : '' %>" 
+                            data-team="away"
+                            onclick="selectTeam('<%= match.match_id %>', 'away')">
+                      <%= match.away_team %>
+                    </button>
+                  </div>
+                </div>
+              <% } %>
+              
+              <button class="<%= buttonClass %>" 
+                      data-match-id="<%= match.match_id %>"
+                      data-tipped-team="<%= tippedTeam %>">
                 <%= buttonText %>
               </button>
             </div>
           <% } else if (isLocked && !hasResult) { %>
             <div class="prediction-locked">
-              <% if (prediction !== '') { %>
+              <% if (prediction !== null) { %>
                 <p>Your prediction: <%= prediction %>% for <%= match.home_team %></p>
                 <p><%= 100 - prediction %>% for <%= match.away_team %></p>
+                <% if (parseInt(prediction) === 50) { %>
+                  <p>Tipped: <%= tippedTeam === 'home' ? match.home_team : match.away_team %> to win</p>
+                <% } %>
               <% } else { %>
                 <p>No prediction made</p>
               <% } %>
@@ -132,8 +169,11 @@
             </div>
           <% } else if (hasResult) { %>
             <div class="prediction-result">
-              <% if (prediction !== '') { %>
+              <% if (prediction !== null) { %>
                 <p>Your prediction: <%= prediction %>% for <%= match.home_team %></p>
+                <% if (parseInt(prediction) === 50) { %>
+                  <p>Tipped: <%= tippedTeam === 'home' ? match.home_team : match.away_team %> to win</p>
+                <% } %>
                 <% 
                   const homeWon = match.home_score > match.away_score;
                   const awayWon = match.home_score < match.away_score;
@@ -142,24 +182,38 @@
                   // Calculate tip points
                   let tipPoints = 0;
                   let tipClass = "";
+                  let resultText = "";
                   
                   if (parseInt(prediction) === 50) {
+                    // For 50% predictions, use tipped team
                     if (tie) {
+                      tipPoints = 0;
+                      tipClass = "partial";
+                      resultText = "No points for draws 🤝";
+                    } else if ((homeWon && tippedTeam === 'home') || (awayWon && tippedTeam === 'away')) {
                       tipPoints = 1.0;
                       tipClass = "correct";
+                      resultText = "Correct tip! 🎉";
                     } else {
-                      tipPoints = 0.5;
-                      tipClass = "partial";
+                      tipPoints = 0.0;
+                      tipClass = "incorrect";
+                      resultText = "Incorrect tip 😔";
                     }
-                  } else if ((homeWon && parseInt(prediction) > 50) || (awayWon && parseInt(prediction) < 50)) {
-                    tipPoints = 1.0;
-                    tipClass = "correct";
-                  } else if (tie) {
-                    tipPoints = 0.5;
-                    tipClass = "partial";
                   } else {
-                    tipPoints = 0.0;
-                    tipClass = "incorrect";
+                    // For other predictions, standard logic
+                    if (tie) {
+                      tipPoints = 0.0;
+                      tipClass = "partial";
+                      resultText = "No points for draws 🤝";
+                    } else if ((homeWon && parseInt(prediction) > 50) || (awayWon && parseInt(prediction) < 50)) {
+                      tipPoints = 1.0;
+                      tipClass = "correct";
+                      resultText = "Correct prediction! 🎉";
+                    } else {
+                      tipPoints = 0.0;
+                      tipClass = "incorrect";
+                      resultText = "Incorrect prediction 😔";
+                    }
                   }
                   
                   // Calculate Brier score
@@ -182,6 +236,7 @@
                     console.error("Error calculating bits score:", e);
                   }
                 %>
+                <p class="result-accuracy <%= tipClass %>"><%= resultText %></p>
                 <div class="metrics-details">
                   <p>Tip: <span class="<%= tipClass %>"><%= tipPoints.toFixed(1) %></span> | Brier: <%= brierScore %> | Bits: <%= bitsScore %></p>
                 </div>
@@ -200,6 +255,25 @@
   // Pass user predictions to client-side JavaScript
   window.userPredictions = <%- JSON.stringify(predictions) %>;
   window.isAdmin = <%= locals.isAdmin || false %>;
+  
+  // Function to select a team for 50% predictions
+  function selectTeam(matchId, team) {
+    const homeButton = document.querySelector(`#team-selection-${matchId} .home-team-button`);
+    const awayButton = document.querySelector(`#team-selection-${matchId} .away-team-button`);
+    const saveButton = document.querySelector(`.save-prediction[data-match-id="${matchId}"]`);
+    
+    if (team === 'home') {
+      homeButton.classList.add('selected');
+      awayButton.classList.remove('selected');
+    } else {
+      awayButton.classList.add('selected');
+      homeButton.classList.remove('selected');
+    }
+    
+    if (saveButton) {
+      saveButton.dataset.tippedTeam = team;
+    }
+  }
 </script>
 <script src="/js/main.js"></script>
 

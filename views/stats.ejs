@@ -117,28 +117,41 @@
                     const awayWon = match.home_score < match.away_score;
                     const tie = match.home_score === match.away_score;
                     
-                    // Check for exact 50% prediction
+                    // Check for prediction and tipped team
                     let tipResult = '';
                     let tipClass = '';
+                    let tipPoints = 0;
+                    
+                    // Get tipped team (default to home if not stored)
+                    const tippedTeam = matchPrediction.tipped_team || 'home';
                     
                     if (matchPrediction.home_win_probability === 50) {
                       if (tie) {
-                        tipResult = 'Correct prediction! (Full point) 🎉';
-                        tipClass = 'correct';
-                      } else {
-                        tipResult = 'Half point for 50/50 prediction ⚖️';
+                        tipResult = 'No points for draws 🤝';
                         tipClass = 'partial';
+                        tipPoints = 0;
+                      } else if ((homeWon && tippedTeam === 'home') || (awayWon && tippedTeam === 'away')) {
+                        tipResult = 'Correct tip! 🎉';
+                        tipClass = 'correct';
+                        tipPoints = 1.0;
+                      } else {
+                        tipResult = 'Incorrect tip 😔';
+                        tipClass = 'incorrect';
+                        tipPoints = 0;
                       }
                     } else if ((homeWon && matchPrediction.home_win_probability > 50) || 
-                               (awayWon && matchPrediction.home_win_probability < 50)) {
+                              (awayWon && matchPrediction.home_win_probability < 50)) {
                       tipResult = 'Correct prediction! 🎉';
                       tipClass = 'correct';
+                      tipPoints = 1.0;
                     } else if (tie) {
-                      tipResult = 'Half point for draw ⚖️';
+                      tipResult = 'No points for draws 🤝';
                       tipClass = 'partial';
+                      tipPoints = 0;
                     } else {
                       tipResult = 'Incorrect prediction 😔';
                       tipClass = 'incorrect';
+                      tipPoints = 0;
                     }
                     
                     // Calculate additional metrics
@@ -158,6 +171,9 @@
                   %>
                   <p class="result-accuracy <%= tipClass %>">
                     <%= tipResult %>
+                    <% if (matchPrediction.home_win_probability === 50) { %>
+                      <small>(Tipped: <%= tippedTeam === 'home' ? match.home_team : match.away_team %>)</small>
+                    <% } %>
                   </p>
                   <div class="metrics-details">
                     <p>Tip: <span class="<%= tipClass %>"><%= tipPoints.toFixed(1) %></span> | Brier: <%= brierScore %> | Bits: <%= bitsScore %></p>

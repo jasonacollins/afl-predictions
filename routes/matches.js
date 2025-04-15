@@ -1,10 +1,53 @@
 const express = require('express');
 const router = express.Router();
-const { getQuery, getOne } = require('../models/db');
+const { getQuery, getOne, runQuery } = require('../models/db');
 const { isAuthenticated } = require('./auth');
 
 // Require authentication for all matches routes
 router.use(isAuthenticated);
+
+// This function ensures all predictors have predictions for all completed matches
+async function ensureDefaultPredictions(selectedYear) {
+  try {
+    // Get all predictors
+    const predictors = await getQuery('SELECT predictor_id FROM predictors');
+    
+    // Get all completed matches for the selected year
+    const completedMatches = await getQuery(`
+      SELECT match_id 
+      FROM matches 
+      WHERE home_score IS NOT NULL 
+      AND away_score IS NOT NULL
+      AND year = ?
+    `, [selectedYear]);
+    
+    // For each predictor, check if they have predictions for all completed matches
+    for (const predictor of predictors) {
+      for (const match of completedMatches) {
+        // Check if the predictor has a prediction for this match
+        const existingPrediction = await getOne(`
+          SELECT * FROM predictions 
+          WHERE predictor_id = ? AND match_id = ?
+        `, [predictor.predictor_id, match.match_id]);
+        
+        // If no prediction exists, create a default one (50% with home team tip)
+        if (!existingPrediction) {
+          await runQuery(`
+            INSERT INTO predictions 
+            (match_id, predictor_id, home_win_probability, tipped_team) 
+            VALUES (?, ?, 50, 'home')
+          `, [match.match_id, predictor.predictor_id]);
+          
+          console.log(`Created default prediction for predictor ${predictor.predictor_id}, match ${match.match_id}`);
+        }
+      }
+    }
+    
+    console.log('Default predictions created successfully');
+  } catch (error) {
+    console.error('Error creating default predictions:', error);
+  }
+}
 
 // Get all matches
 router.get('/round/:round', async (req, res) => {
@@ -84,6 +127,9 @@ router.get('/stats', async (req, res) => {
       'SELECT DISTINCT year FROM matches ORDER BY year DESC'
     );
     
+    // Ensure all predictors have predictions for completed matches
+    await ensureDefaultPredictions(selectedYear);
+    
     // Get all predictors
     const predictors = await getQuery(
       'SELECT predictor_id, name FROM predictors ORDER BY name'
@@ -159,19 +205,30 @@ router.get('/stats', async (req, res) => {
         }
         totalBitsScore += bitsScore;
         
-        // Calculate tip points with half-point system
+        // Get tipped team (default to home if not stored)
+        const tippedTeam = pred.tipped_team || 'home';
+        
+        // Calculate tip points with the revised logic
         if (pred.home_win_probability === 50) {
-          // Half point for 50% prediction (full point if it was a tie)
-          tipPoints += tie ? 1 : 0.5;
-        } else if (homeWon && pred.home_win_probability > 50) {
-          // Correctly predicted home team win
-          tipPoints += 1;
-        } else if (awayWon && pred.home_win_probability < 50) {
-          // Correctly predicted away team win
-          tipPoints += 1;
-        } else if (tie) {
-          // Half point for any prediction in case of a tie (unless exactly 50%)
-          tipPoints += 0.5;
+          // For 50% predictions, use tipped team
+          if (tie) {
+            // No points for draws
+            tipPoints += 0;
+          } else if ((homeWon && tippedTeam === 'home') || (awayWon && tippedTeam === 'away')) {
+            // Correctly tipped
+            tipPoints += 1;
+          }
+          // Else 0 points for incorrect tip
+        } else {
+          // For non-50% predictions, standard logic
+          if (tie) {
+            // No points for draws
+            tipPoints += 0;
+          } else if ((homeWon && pred.home_win_probability > 50) || (awayWon && pred.home_win_probability < 50)) {
+            // Correctly predicted
+            tipPoints += 1;
+          }
+          // Else 0 points for incorrect prediction
         }
       });
       

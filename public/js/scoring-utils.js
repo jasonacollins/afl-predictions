@@ -31,33 +31,27 @@ function calculateBitsScore(predictedProbability, actualOutcome) {
   }
 }
 
-// Calculate tip correctness with half-point for 50% predictions
-function calculateTipPoints(predictedProbability, homeScore, awayScore) {
-  // Convert to probability (0-1)
-  const probability = predictedProbability / 100;
-  
+// Calculate tip correctness with revised logic for 50% predictions
+function calculateTipPoints(predictedProbability, homeScore, awayScore, tippedTeam = 'home') {
   // Determine actual outcome
-  if (homeScore > awayScore) {
-    // Home team won
-    if (predictedProbability === 50) {
-      return 0.5; // Half point for 50% prediction
+  const homeWon = homeScore > awayScore;
+  const awayWon = homeScore < awayScore;
+  const tie = homeScore === awayScore;
+  
+  // For 50% predictions, use the tipped team
+  if (predictedProbability === 50) {
+    if (tie) {
+      return 0; // No points for a draw with 50% prediction
     }
-    return predictedProbability > 50 ? 1 : 0;
+    return (homeWon && tippedTeam === 'home') || (awayWon && tippedTeam === 'away') ? 1 : 0;
   } 
-  else if (homeScore < awayScore) {
-    // Away team won
-    if (predictedProbability === 50) {
-      return 0.5; // Half point for 50% prediction
-    }
-    return predictedProbability < 50 ? 1 : 0;
+  
+  // For other predictions, standard logic
+  if (tie) {
+    return 0; // No points for a draw
   }
-  else {
-    // Draw
-    if (predictedProbability === 50) {
-      return 1; // Full point for correctly predicting a draw
-    }
-    return 0.5; // Half point for any prediction in case of a draw
-  }
+  
+  return (homeWon && predictedProbability > 50) || (awayWon && predictedProbability < 50) ? 1 : 0;
 }
 
 // Export to make available globally
