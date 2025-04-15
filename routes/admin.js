@@ -484,4 +484,29 @@ router.post('/reset-password/:userId', async (req, res) => {
   }
 });
 
+// Manual API refresh route
+router.post('/refresh-data', async (req, res) => {
+  try {
+    const year = req.body.year || new Date().getFullYear();
+    console.log(`Manual refresh initiated by ${req.session.user.name} for year ${year}`);
+    
+    // Call the syncGamesFromAPI function with the specified year
+    const results = await require('../scripts/sync-games').syncGamesFromAPI({ year });
+    
+    // Return the results
+    res.json({
+      success: true,
+      message: `API refresh complete. Inserted: ${results.insertCount}, Updated: ${results.updateCount}, Skipped: ${results.skipCount}`,
+      results
+    });
+  } catch (error) {
+    console.error('API refresh error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to refresh data from API',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

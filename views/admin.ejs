@@ -8,6 +8,36 @@
       Export All Predictions (CSV)
     </a>
   </div>
+
+  <div class="export-actions">
+    <a href="/admin/export/predictions" class="button secondary-button">
+      Export All Predictions (CSV)
+    </a>
+    <button id="refreshApiButton" class="button primary-button">
+      Refresh API Data
+    </button>
+  </div>
+  
+  <!-- Add a modal for API refresh -->
+  <div id="refreshApiModal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <span class="close" onclick="closeRefreshModal()">&times;</span>
+      <h3>Refresh API Data</h3>
+      <p>Select a year to refresh data from the Squiggle API:</p>
+      <form id="refreshApiForm">
+        <div class="form-group">
+          <label for="refreshYear">Year:</label>
+          <select id="refreshYear" name="year">
+            <% years.forEach(year => { %>
+              <option value="<%= year.year %>" <%= year.year === selectedYear ? 'selected' : '' %>><%= year.year %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div id="refreshStatus"></div>
+        <button type="submit" class="button primary-button">Start Refresh</button>
+      </form>
+    </div>
+  </div>
   
   <div class="tab-navigation">
     <a href="/predictions" class="tab">Make Predictions</a>
@@ -511,5 +541,63 @@
 </script>
 
 <script src="/js/main.js"></script>
+
+<script>
+  // Handle API refresh button
+  document.getElementById('refreshApiButton').addEventListener('click', function() {
+    document.getElementById('refreshApiModal').style.display = 'block';
+  });
+  
+  function closeRefreshModal() {
+    document.getElementById('refreshApiModal').style.display = 'none';
+  }
+  
+  // Handle refresh form submission
+  document.getElementById('refreshApiForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const year = document.getElementById('refreshYear').value;
+    const statusDiv = document.getElementById('refreshStatus');
+    const submitButton = this.querySelector('button[type="submit"]');
+    
+    // Update UI
+    statusDiv.innerHTML = '<p class="alert success">Refreshing data from API, please wait...</p>';
+    submitButton.disabled = true;
+    
+    // Make API request
+    fetch('/admin/refresh-data', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ year }),
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        statusDiv.innerHTML = `<p class="alert success">${data.message}</p>`;
+      } else {
+        statusDiv.innerHTML = `<p class="alert error">${data.message}</p>`;
+      }
+      
+      // Re-enable the button after 3 seconds
+      setTimeout(() => {
+        submitButton.disabled = false;
+      }, 3000);
+    })
+    .catch(error => {
+      statusDiv.innerHTML = `<p class="alert error">Error: ${error.message}</p>`;
+      submitButton.disabled = false;
+    });
+  });
+  
+  // Close modal when clicking outside of it
+  window.addEventListener('click', function(e) {
+    const modal = document.getElementById('refreshApiModal');
+    if (e.target === modal) {
+      closeRefreshModal();
+    }
+  });
+</script>
 
 <%- include('partials/footer') %>

@@ -8,4 +8,5 @@ services:
       - SESSION_SECRET=your_secure_session_secret
     volumes:
       - ./data:/app/data
+      - ./logs:/var/log
     restart: unless-stopped

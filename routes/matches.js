@@ -12,18 +12,41 @@ async function ensureDefaultPredictions(selectedYear) {
     // Get all predictors
     const predictors = await getQuery('SELECT predictor_id FROM predictors');
     
-    // Get all completed matches for the selected year
+    // Get all completed matches for the selected year with match dates
     const completedMatches = await getQuery(`
-      SELECT match_id 
+      SELECT match_id, match_date 
       FROM matches 
       WHERE home_score IS NOT NULL 
       AND away_score IS NOT NULL
       AND year = ?
     `, [selectedYear]);
     
+    // Current date for comparison
+    const currentDate = new Date();
+    
     // For each predictor, check if they have predictions for all completed matches
     for (const predictor of predictors) {
       for (const match of completedMatches) {
+        // Only create default predictions for matches that have already occurred
+        let matchInPast = true;
+        
+        if (match.match_date) {
+          try {
+            const matchDate = new Date(match.match_date);
+            // Check if matchDate is valid and in the past
+            if (!isNaN(matchDate.getTime()) && matchDate > currentDate) {
+              matchInPast = false;
+            }
+          } catch (err) {
+            console.error(`Error parsing match date: ${match.match_date}`);
+          }
+        }
+        
+        // Skip if the match is in the future
+        if (!matchInPast) {
+          continue;
+        }
+        
         // Check if the predictor has a prediction for this match
         const existingPrediction = await getOne(`
           SELECT * FROM predictions 
