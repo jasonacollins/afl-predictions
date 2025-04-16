@@ -1,10 +1,30 @@
-## AFL Predictions
+# AFL Predictions
 
-A web application for predicting and tracking AFL match results.
+A web application that allows users to predict Australian Football League match outcomes and compete on prediction accuracy.
 
-## Overview
+## Application Overview
 
-This application allows users to make predictions for Australian Football League matches and tracks prediction accuracy over time.
+The AFL Predictions app enables users to:
+
+- Create accounts and make probability-based predictions for upcoming AFL matches
+- Express their prediction confidence as a percentage (how likely they think the home team is to win)
+- Track prediction accuracy using various scoring metrics:
+  - **Tip Points**: Binary scoring for correct match outcome predictions
+  - **Brier Score**: Measures prediction calibration (lower is better)
+  - **Bits Score**: Information theory-based scoring (higher is better)
+- Compare performance on a leaderboard with other predictors
+- View historical prediction accuracy across multiple AFL seasons
+
+The app synchronises with the Squiggle API to automatically retrieve match fixtures and results, ensuring up-to-date information throughout the AFL season.
+
+## Key Features
+
+- **Probability-Based Predictions**: Instead of simple win/loss tips, users express confidence as percentages
+- **Advanced Scoring System**: Multiple accuracy metrics providing deeper insights into prediction quality
+- **Live Match Updates**: Automatic synchronisation with AFL match results
+- **User Leaderboards**: Competitive element to compare prediction performance
+- **Multi-Season Support**: Historical tracking of predictions across multiple years
+- **Admin Dashboard**: Tools for managing users and overseeing the prediction platform
 
 ## Environment Details
 
@@ -88,7 +108,7 @@ This application allows users to make predictions for Australian Football League
 npm run dev
 ```
 
-### Production Deployment (PM2)
+### Production Deployment with Docker
 
 1. Pull latest changes:
    ```bash
@@ -96,12 +116,19 @@ npm run dev
    git pull
    ```
 
-2. Install any new dependencies:
+2. Rebuild and restart the Docker containers:
    ```bash
-   npm install
+   docker-compose down
+   docker-compose build
+   docker-compose up -d
    ```
 
-3. Restart the application:
+3. Verify deployment:
    ```bash
-   pm2 restart afl-predictions
+   docker-compose ps
+   docker-compose logs
    ```
+
+## Data Sources
+
+The application uses the Squiggle API (https://api.squiggle.com.au) to source match fixtures and results.
