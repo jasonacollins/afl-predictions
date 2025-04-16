@@ -39,11 +39,11 @@
             <tr>
               <th>Rank</th>
               <th>Name</th>
-              <th>Tip Accuracy</th>
               <th>Brier Score</th>
               <th>Bits Score</th>
               <th>Tips</th>
-              <th>Total</th>
+              <th>Tip Accuracy</th>
+              <th>Predictions</th>
             </tr>
           </thead>
           <tbody>
@@ -55,10 +55,10 @@
               <tr class="<%= stats.id === currentUser.id ? 'current-user' : '' %>">
                 <td><%= rank++ %></td>
                 <td><%= stats.name %> <%= stats.id === currentUser.id ? '(You)' : '' %></td>
-                <td><%= stats.tipAccuracy %>%</td>
                 <td><%= stats.brierScore %></td>
                 <td><%= stats.bitsScore %></td>
-                <td><%= stats.tipPoints.toFixed(1) %></td>
+                <td><%= stats.tipPoints %></td>
+                <td><%= stats.tipAccuracy %>%</td>
                 <td><%= stats.totalPredictions %></td>
               </tr>
             <% 

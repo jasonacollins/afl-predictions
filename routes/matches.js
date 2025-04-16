@@ -153,9 +153,9 @@ router.get('/stats', async (req, res) => {
     // Ensure all predictors have predictions for completed matches
     await ensureDefaultPredictions(selectedYear);
     
-    // Get all predictors
+    // Get all predictors, but include admin status
     const predictors = await getQuery(
-      'SELECT predictor_id, name FROM predictors ORDER BY name'
+      'SELECT predictor_id, name, is_admin FROM predictors ORDER BY name'
     );
     
     // Get matches with results for the selected year
@@ -290,10 +290,19 @@ router.get('/stats', async (req, res) => {
       }
     });
     
+    // Filter out admin users from leaderboard
+    const filteredPredictorStats = predictorStats.filter(stat => {
+      const predictor = predictors.find(p => p.predictor_id === stat.id);
+      return predictor && !predictor.is_admin;
+    });
+
+    // Sort by Brier score (lower is better)
+    filteredPredictorStats.sort((a, b) => parseFloat(a.brierScore) - parseFloat(b.brierScore));
+
     res.render('stats', {
       years,
       selectedYear,
-      predictorStats,
+      predictorStats: filteredPredictorStats,
       completedMatches,
       userPredictions,
       currentUser: req.session.user
