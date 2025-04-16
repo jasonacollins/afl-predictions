@@ -508,4 +508,43 @@ router.post('/api-refresh', async (req, res) => {
   }
 });
 
+// Delete user route
+router.post('/delete-user/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    
+    // Don't allow deleting the current logged-in user
+    if (parseInt(userId) === req.session.user.id) {
+      return res.redirect('/admin?error=You cannot delete your own account');
+    }
+    
+    // Check if user exists
+    const user = await getOne(
+      'SELECT * FROM predictors WHERE predictor_id = ?',
+      [userId]
+    );
+    
+    if (!user) {
+      return res.redirect('/admin?error=User not found');
+    }
+    
+    // Delete user's predictions first (foreign key constraint)
+    await runQuery(
+      'DELETE FROM predictions WHERE predictor_id = ?',
+      [userId]
+    );
+    
+    // Delete the user
+    await runQuery(
+      'DELETE FROM predictors WHERE predictor_id = ?',
+      [userId]
+    );
+    
+    res.redirect('/admin?success=User deleted successfully');
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.redirect('/admin?error=Failed to delete user');
+  }
+});
+
 module.exports = router;
