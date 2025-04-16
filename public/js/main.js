@@ -108,9 +108,9 @@ function renderMatches(matches) {
         </div>
         
         <div class="match-teams">
-          <div class="home-team">${match.home_team}</div>
+          <div class="home-team">${(match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team}</div>
           <div class="vs">vs</div>
-          <div class="away-team">${match.away_team}</div>
+          <div class="away-team">${(match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team}</div>
         </div>
         
         ${hasResult ? `
@@ -123,7 +123,7 @@ function renderMatches(matches) {
           <div class="prediction-controls">
             <div class="prediction-inputs">
               <div class="team-prediction">
-                <label>${match.home_team}:</label>
+                <label>${(match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team}:</label>
                 <div class="input-with-symbol">
                   <input type="number" 
                          class="prediction-input home-prediction" 
@@ -136,7 +136,7 @@ function renderMatches(matches) {
               </div>
               
               <div class="team-prediction">
-                <label>${match.away_team}:</label>
+                <label>${(match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team}:</label>
                 <div class="input-with-symbol">
                   <input type="number" 
                          class="prediction-input away-prediction" 
@@ -153,38 +153,44 @@ function renderMatches(matches) {
               <div id="team-selection-${match.match_id}" class="team-selection">
                 <p>Who do you think will win?</p>
                 <div class="team-buttons">
-                  <button type="button" class="team-button home-team-button ${tippedTeam === 'home' ? 'selected' : ''}" data-team="home">${match.home_team}</button>
-                  <button type="button" class="team-button away-team-button ${tippedTeam === 'away' ? 'selected' : ''}" data-team="away">${match.away_team}</button>
+                  <button type="button" class="team-button home-team-button ${tippedTeam === 'home' ? 'selected' : ''}" data-team="home">${(match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team}</button>
+                  <button type="button" class="team-button away-team-button ${tippedTeam === 'away' ? 'selected' : ''}" data-team="away">${(match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team}</button>
                 </div>
               </div>
             ` : ''}
             
-            <button class="${buttonClass}" data-match-id="${match.match_id}" data-tipped-team="${tippedTeam}">
+            <button class="${buttonClass}" 
+                    data-match-id="${match.match_id}"
+                    data-tipped-team="${tippedTeam}">
               ${buttonText}
             </button>
           </div>
-        ` : (isLocked && !hasResult) ? `
+        ` : isLocked && !hasResult ? `
           <div class="prediction-locked">
-            ${prediction !== '' ? `
-              <p>Your prediction: ${prediction}% for ${match.home_team}</p>
-              <p>${100 - prediction}% for ${match.away_team}</p>
-              ${parseInt(prediction) === 50 ? `<p>Tipped: ${tippedTeam === 'home' ? match.home_team : match.away_team} to win</p>` : ''}
+            ${hasPrediction ? `
+              <p>Your prediction: ${prediction}% for ${(match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team}</p>
+              <p>${awayPrediction}% for ${(match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team}</p>
+              ${parseInt(prediction) === 50 ? `
+                <p>Tipped: ${tippedTeam === 'home' ? ((match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team) : ((match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team)} to win</p>
+              ` : ''}
             ` : `
               <p>No prediction made</p>
             `}
             <p class="locked-message">Match has started - predictions locked</p>
           </div>
-        ` : `
+        ` : hasResult ? `
           <div class="prediction-result">
-            ${prediction !== '' ? `
-              <p>Your prediction: ${prediction}% for ${match.home_team}</p>
-              ${parseInt(prediction) === 50 ? `<p>Tipped: ${tippedTeam === 'home' ? match.home_team : match.away_team} to win</p>` : ''}
+            ${hasPrediction ? `
+              <p>Your prediction: ${prediction}% for ${(match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team}</p>
+              ${parseInt(prediction) === 50 ? `
+                <p>Tipped: ${tippedTeam === 'home' ? ((match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team) : ((match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team)} to win</p>
+              ` : ''}
               ${calculateAccuracy(match, prediction, tippedTeam)}
             ` : `
               <p>No prediction made</p>
             `}
           </div>
-        `}
+        ` : ''}
       </div>
     `;
   });
@@ -194,7 +200,7 @@ function renderMatches(matches) {
   // Re-initialize event listeners for new elements
   initPredictionInputs();
   initSavePredictionButtons();
-}
+  }
 
 // Calculate prediction accuracy text
 function calculateAccuracy(match, prediction, tippedTeam) {
@@ -369,8 +375,8 @@ function addTeamSelection(matchId, homeTeam, awayTeam, saveButton) {
   teamSelection.innerHTML = `
     <p>Who do you think will win?</p>
     <div class="team-buttons">
-      <button type="button" class="team-button home-team-button" data-team="home">${homeTeam}</button>
-      <button type="button" class="team-button away-team-button" data-team="away">${awayTeam}</button>
+      <button type="button" class="team-button home-team-button" data-team="home">${(homeTeam === 'Greater Western Sydney' && saveButton.closest('.match-card').querySelector('.home-team').dataset.abbrev) ? saveButton.closest('.match-card').querySelector('.home-team').dataset.abbrev : homeTeam}</button>
+      <button type="button" class="team-button away-team-button" data-team="away">${(awayTeam === 'Greater Western Sydney' && saveButton.closest('.match-card').querySelector('.away-team').dataset.abbrev) ? saveButton.closest('.match-card').querySelector('.away-team').dataset.abbrev : awayTeam}</button>
     </div>
   `;
   

@@ -166,13 +166,13 @@
                 <%= buttonText %>
               </button>
             </div>
-          <% } else if (isLocked && !hasResult) { %>
+          <<% } else if (isLocked && !hasResult) { %>
             <div class="prediction-locked">
               <% if (prediction !== null) { %>
-                <p>Your prediction: <%= prediction %>% for <%= match.home_team %></p>
-                <p><%= 100 - prediction %>% for <%= match.away_team %></p>
+                <p>Your prediction: <%= prediction %>% for <%= (match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team %></p>
+                <p><%= 100 - prediction %>% for <%= (match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team %></p>
                 <% if (parseInt(prediction) === 50) { %>
-                  <p>Tipped: <%= tippedTeam === 'home' ? match.home_team : match.away_team %> to win</p>
+                  <p>Tipped: <%= tippedTeam === 'home' ? ((match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team) : ((match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team) %> to win</p>
                 <% } %>
               <% } else { %>
                 <p>No prediction made</p>
@@ -182,9 +182,9 @@
           <% } else if (hasResult) { %>
             <div class="prediction-result">
               <% if (prediction !== null) { %>
-                <p>Your prediction: <%= prediction %>% for <%= match.home_team %></p>
+                <p>Your prediction: <%= prediction %>% for <%= (match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team %></p>
                 <% if (parseInt(prediction) === 50) { %>
-                  <p>Tipped: <%= tippedTeam === 'home' ? match.home_team : match.away_team %> to win</p>
+                  <p>Tipped: <%= tippedTeam === 'home' ? ((match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team) : ((match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team) %> to win</p>
                 <% } %>
                 <% 
                   const homeWon = match.home_score > match.away_score;
