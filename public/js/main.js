@@ -235,26 +235,26 @@ function calculateAccuracy(match, prediction, tippedTeam) {
   if (parseInt(prediction) === 50) {
     // For 50% predictions, use the tipped team
     if ((homeWon && tippedTeam === 'home') || (awayWon && tippedTeam === 'away')) {
-      tipPoints = 1.0;
+      tipPoints = 1;
       tipClass = "correct";
     } else if (tie) {
-      // Half point for tie regardless of tip
-      tipPoints = 0.5;
+      // One point for tie regardless of tip
+      tipPoints = 1;
       tipClass = "partial";
     }
   } else {
     // Standard logic for non-50% predictions
     if ((homeWon && prediction > 50) || (awayWon && prediction < 50)) {
-      tipPoints = 1.0;
+      tipPoints = 1;
       tipClass = "correct";
     } else if (tie) {
-      tipPoints = 0.5;
+      tipPoints = 1;
       tipClass = "partial";
     }
   }
   
   return `<div class="metrics-details">
-    <p>Tip: <span class="${tipClass}">${tipPoints.toFixed(1)}</span> | Brier: ${brierScore} | Bits: ${bitsScore}</p>
+    <p>Tip: <span class="${tipClass}">${tipPoints}</span> | Brier: ${brierScore} | Bits: ${bitsScore}</p>
   </div>`;
 }
 

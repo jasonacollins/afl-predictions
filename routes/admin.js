@@ -362,7 +362,7 @@ router.get('/export/predictions', async (req, res) => {
           } else {
             const correctPrediction = (homeWon && tippedTeam === 'home') || (awayWon && tippedTeam === 'away');
             correct = correctPrediction ? 'Yes' : 'No';
-            tipPoints = correctPrediction ? 1.0 : 0.0;
+            tipPoints = correctPrediction ? 1 : 0;
           }
         } else {
           // For other predictions, use standard logic
@@ -375,7 +375,7 @@ router.get('/export/predictions', async (req, res) => {
           if (tie) {
             tipPoints = 0;
           } else {
-            tipPoints = correctPrediction ? 1.0 : 0.0;
+            tipPoints = correctPrediction ? 1 : 0;
           }
         }
         
