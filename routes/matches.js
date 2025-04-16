@@ -84,7 +84,9 @@ router.get('/round/:round', async (req, res) => {
     matches = await getQuery(
       `SELECT m.*, 
        t1.name as home_team, 
-       t2.name as away_team 
+       t1.abbrev as home_team_abbrev,
+       t2.name as away_team,
+       t2.abbrev as away_team_abbrev 
        FROM matches m
        JOIN teams t1 ON m.home_team_id = t1.team_id
        JOIN teams t2 ON m.away_team_id = t2.team_id
@@ -162,7 +164,9 @@ router.get('/stats', async (req, res) => {
     const completedMatches = await getQuery(`
       SELECT m.*, 
              t1.name as home_team, 
-             t2.name as away_team 
+             t1.abbrev as home_team_abbrev,
+             t2.name as away_team,
+             t2.abbrev as away_team_abbrev 
       FROM matches m
       JOIN teams t1 ON m.home_team_id = t1.team_id
       JOIN teams t2 ON m.away_team_id = t2.team_id

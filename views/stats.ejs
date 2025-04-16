@@ -96,9 +96,21 @@
               </div>
               
               <div class="match-teams">
-                <div class="home-team"><%= match.home_team %></div>
+                <div class="home-team">
+                  <% if (match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) { %>
+                    <%= match.home_team_abbrev %>
+                  <% } else { %>
+                    <%= match.home_team %>
+                  <% } %>
+                </div>
                 <div class="vs">vs</div>
-                <div class="away-team"><%= match.away_team %></div>
+                <div class="away-team">
+                  <% if (match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) { %>
+                    <%= match.away_team_abbrev %>
+                  <% } else { %>
+                    <%= match.away_team %>
+                  <% } %>
+                </div>
               </div>
               
               <div class="match-result">

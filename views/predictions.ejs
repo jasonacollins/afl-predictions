@@ -87,9 +87,21 @@
           </div>
           
           <div class="match-teams">
-            <div class="home-team"><%= match.home_team %></div>
+            <div class="home-team">
+              <% if (match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) { %>
+                <%= match.home_team_abbrev %>
+              <% } else { %>
+                <%= match.home_team %>
+              <% } %>
+            </div>
             <div class="vs">vs</div>
-            <div class="away-team"><%= match.away_team %></div>
+            <div class="away-team">
+              <% if (match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) { %>
+                <%= match.away_team_abbrev %>
+              <% } else { %>
+                <%= match.away_team %>
+              <% } %>
+            </div>
           </div>
           
           <% if (hasResult) { %>
@@ -187,32 +199,26 @@
                   if (parseInt(prediction) === 50) {
                     // For 50% predictions, use tipped team
                     if (tie) {
-                      tipPoints = 0;
+                      tipPoints = 1;
                       tipClass = "partial";
-                      resultText = "No points for draws 🤝";
                     } else if ((homeWon && tippedTeam === 'home') || (awayWon && tippedTeam === 'away')) {
-                      tipPoints = 1.0;
+                      tipPoints = 1;
                       tipClass = "correct";
-                      resultText = "Correct tip! 🎉";
                     } else {
-                      tipPoints = 0.0;
+                      tipPoints = 0;
                       tipClass = "incorrect";
-                      resultText = "Incorrect tip 😔";
                     }
                   } else {
                     // For other predictions, standard logic
                     if (tie) {
-                      tipPoints = 0.0;
+                      tipPoints = 0;
                       tipClass = "partial";
-                      resultText = "No points for draws 🤝";
                     } else if ((homeWon && parseInt(prediction) > 50) || (awayWon && parseInt(prediction) < 50)) {
-                      tipPoints = 1.0;
+                      tipPoints = 1;
                       tipClass = "correct";
-                      resultText = "Correct prediction! 🎉";
                     } else {
-                      tipPoints = 0.0;
+                      tipPoints = 0;
                       tipClass = "incorrect";
-                      resultText = "Incorrect prediction 😔";
                     }
                   }
                   
@@ -236,7 +242,6 @@
                     console.error("Error calculating bits score:", e);
                   }
                 %>
-                <p class="result-accuracy <%= tipClass %>"><%= resultText %></p>
                 <div class="metrics-details">
                   <p>Tip: <span class="<%= tipClass %>"><%= tipPoints.toFixed(1) %></span> | Brier: <%= brierScore %> | Bits: <%= bitsScore %></p>
                 </div>

@@ -40,19 +40,21 @@ router.get('/', async (req, res) => {
     // Get first round by default
     const selectedRound = rounds.length > 0 ? rounds[0].round_number : null;
     
-    // Get matches for the selected round
+    // Get matches for the selected round AND year
     let matches = [];
     if (selectedRound) {
       matches = await getQuery(
         `SELECT m.*, 
          t1.name as home_team, 
-         t2.name as away_team 
+         t1.abbrev as home_team_abbrev,
+         t2.name as away_team,
+         t2.abbrev as away_team_abbrev 
          FROM matches m
          JOIN teams t1 ON m.home_team_id = t1.team_id
          JOIN teams t2 ON m.away_team_id = t2.team_id
-         WHERE m.round_number = ?
+         WHERE m.round_number = ? AND m.year = ?  /* Add year filter here */
          ORDER BY m.match_number`,
-        [selectedRound]
+        [selectedRound, selectedYear] /* Add selectedYear to parameters */
       );
       
       // Process matches to add isLocked field
@@ -112,7 +114,9 @@ router.get('/round/:round', async (req, res) => {
     const matches = await getQuery(
       `SELECT m.*, 
        t1.name as home_team, 
-       t2.name as away_team 
+       t1.abbrev as home_team_abbrev,
+       t2.name as away_team,
+       t2.abbrev as away_team_abbrev 
        FROM matches m
        JOIN teams t1 ON m.home_team_id = t1.team_id
        JOIN teams t2 ON m.away_team_id = t2.team_id
