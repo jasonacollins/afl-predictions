@@ -26,6 +26,9 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Handle save prediction buttons
   initSavePredictionButtons();
+  
+  // Update round button states
+  updateRoundButtonStates();
 });
 
 // Update match list for selected round via AJAX
@@ -54,6 +57,8 @@ function fetchMatchesForRound(round) {
     .then(response => response.json())
     .then(matches => {
       renderMatches(matches);
+      // Call our new function to update round button states
+      updateRoundButtonStates();
     })
     .catch(error => {
       console.error('Error fetching matches:', error);
@@ -358,6 +363,51 @@ function initPredictionInputs() {
         }
       }
     });
+  });
+}
+
+// Function to update round button states
+function updateRoundButtonStates() {
+  // Get all round buttons
+  const roundButtons = document.querySelectorAll('.round-button');
+  
+  // For each round button, check its state
+  roundButtons.forEach(async (button) => {
+    const round = button.dataset.round;
+    
+    // Get the current year from the URL or use the selected year
+    const urlParams = new URLSearchParams(window.location.search);
+    const year = urlParams.get('year') || new Date().getFullYear();
+    
+    try {
+      // 1. Check if the round is completed
+      // Fetch matches for this round to check if they're completed
+      const response = await fetch(`/predictions/round/${round}?year=${year}`);
+      const matches = await response.json();
+      
+      // Round is completed if all matches have scores
+      const isCompleted = matches.length > 0 && matches.every(match => 
+        match.home_score !== null && match.away_score !== null
+      );
+      
+      // 2. Check if the round has any predictions
+      const hasPredictions = matches.some(match => 
+        window.userPredictions && window.userPredictions[match.match_id]
+      );
+      
+      // 3. Set the appropriate class
+      button.classList.remove('completed', 'has-predictions', 'needs-predictions');
+      
+      if (isCompleted) {
+        button.classList.add('completed');
+      } else if (hasPredictions) {
+        button.classList.add('has-predictions');
+      } else {
+        button.classList.add('needs-predictions');
+      }
+    } catch (error) {
+      console.error('Error checking round state:', error);
+    }
   });
 }
 

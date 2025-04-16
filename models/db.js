@@ -98,6 +98,7 @@ async function initializeDatabase() {
           predictor_id INTEGER NOT NULL,
           home_win_probability INTEGER NOT NULL,
           prediction_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          tipped_team TEXT DEFAULT 'home',
           FOREIGN KEY (match_id) REFERENCES matches (match_id),
           FOREIGN KEY (predictor_id) REFERENCES predictors (predictor_id),
           UNIQUE (match_id, predictor_id)

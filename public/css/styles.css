@@ -833,3 +833,22 @@ textarea {
   margin-bottom: 5px;
   font-size: 13px;
 }
+
+/* Round Button States */
+.round-button.completed {
+  background-color: #4caf50; /* Green background for completed rounds */
+  color: white;
+  border-color: #3d8b40;
+}
+
+.round-button.has-predictions {
+  background-color: #1a73e8; /* Blue background for rounds with predictions */
+  color: white;
+  border-color: #0d47a1;
+}
+
+.round-button.needs-predictions {
+  background-color: #f8f9fa; /* Light grey background for rounds needing predictions */
+  border: 1px dashed #ddd;
+  color: #666;
+}
