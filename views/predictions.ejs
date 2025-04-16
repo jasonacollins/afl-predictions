@@ -146,13 +146,13 @@
                             class="team-button home-team-button <%= tippedTeam === 'home' ? 'selected' : '' %>" 
                             data-team="home"
                             onclick="selectTeam('<%= match.match_id %>', 'home')">
-                      <%= match.home_team %>
+                      <%= (match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team %>
                     </button>
                     <button type="button" 
                             class="team-button away-team-button <%= tippedTeam === 'away' ? 'selected' : '' %>" 
                             data-team="away"
                             onclick="selectTeam('<%= match.match_id %>', 'away')">
-                      <%= match.away_team %>
+                      <%= (match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team %>
                     </button>
                   </div>
                 </div>
