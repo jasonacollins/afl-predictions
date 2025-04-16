@@ -1,4 +1,4 @@
-const { runQuery } = require('../models/db'); // Corrected path
+const { runQuery, getOne } = require('../models/db'); // Corrected path
 const fetch = require('node-fetch'); // Or your preferred fetch library
 
 /**
@@ -83,7 +83,7 @@ async function refreshAPIData(year) {
       WHERE
         match_number = ?
         -- Optional: Add AND complete != 100 if you only want to update ONCE when it hits 100
-        -- AND (complete IS NULL OR complete != 100)
+        AND (complete IS NULL OR complete != 100)
     `;
 
     console.log(`Attempting to update final scores and completion status in the database...`);
@@ -110,27 +110,29 @@ async function refreshAPIData(year) {
           scoresUpdated++;
           // console.log(`Successfully updated final scores & completion for match_number: ${squiggleGameId}`);
         } else {
-          // If changes is 0, check if the match exists. If it does, it might already be 100% with correct scores.
-          const checkExistsQuery = 'SELECT complete, home_score, away_score FROM matches WHERE match_number = ?'; // Check 'complete' column
-          const existsResult = await runQuery(checkExistsQuery, [squiggleGameId]);
+          // If changes is 0, it could be because the match wasn't found,
+          // or because it was already complete=100 (due to the WHERE clause).
+          // We only want to log a "skip" if the match wasn't found or if there's another unexpected issue.
+          const checkExistsQuery = 'SELECT complete, home_score, away_score FROM matches WHERE match_number = ?';
+          // Use getOne for SELECT queries expected to return a single row
+          const existing = await getOne(checkExistsQuery, [squiggleGameId]); // <--- CHANGE runQuery to getOne
 
-          if (existsResult.length === 0) {
+          // Check if a row was actually returned by getOne
+          if (!existing) {
+             // Match genuinely not found in DB - THIS is a skip we should report.
              const skipMsg = `Skipping score update for Game ID ${squiggleGameId}: Match not found in database. Fixture might be out of sync.`;
              console.warn(skipMsg);
              skippedScoreUpdates.push(skipMsg);
           } else {
-             // Match exists, but no rows changed. Check if it was already 100% complete with same scores.
-             const existing = existsResult[0];
-             if (existing.complete === 100 && existing.home_score === homeScore && existing.away_score === awayScore) { // Check 'complete' column
-                 const skipMsg = `Skipped score update for Game ID ${squiggleGameId}: Match already 100% complete with correct scores in DB.`;
-                 // console.log(skipMsg);
-                 skippedScoreUpdates.push(skipMsg);
-             } else {
-                 // It exists, but wasn't updated for some other reason (e.g., WHERE clause condition if you added one)
-                 const skipMsg = `Skipped score update for Game ID ${squiggleGameId}: Match found but DB update failed unexpectedly (Current completion: ${existing.complete}).`; // Use 'complete' column
+             // Match exists. Check if it was NOT already complete=100.
+             // If it wasn't complete=100, but still wasn't updated, log it as a potential issue.
+             if (existing.complete !== 100) {
+                 const skipMsg = `Skipped score update for Game ID ${squiggleGameId}: Match found but DB update failed unexpectedly (Current completion: ${existing.complete}).`;
                  console.warn(skipMsg);
                  skippedScoreUpdates.push(skipMsg);
              }
+             // If existing.complete === 100, we do nothing here.
+             // The UPDATE was correctly prevented by the WHERE clause, it's not an error or a skip we need to report in the summary.
           }
         }
       } catch (err) {
