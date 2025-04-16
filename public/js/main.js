@@ -123,7 +123,6 @@ function renderMatches(matches) {
           <div class="prediction-controls">
             <div class="prediction-inputs">
               <div class="team-prediction">
-                <label>${(match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team}:</label>
                 <div class="input-with-symbol">
                   <input type="number" 
                          class="prediction-input home-prediction" 
@@ -136,7 +135,6 @@ function renderMatches(matches) {
               </div>
               
               <div class="team-prediction">
-                <label>${(match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team}:</label>
                 <div class="input-with-symbol">
                   <input type="number" 
                          class="prediction-input away-prediction" 
