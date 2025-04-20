@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const router = express.Router();
 const { getQuery, getOne, runQuery } = require('../models/db');
 const { isAuthenticated, isAdmin } = require('./auth');
+const sqlite3 = require('sqlite3').verbose();
 
 // Require authentication and admin for all admin routes
 router.use(isAuthenticated);
@@ -547,6 +548,46 @@ router.post('/delete-user/:userId', async (req, res) => {
   } catch (error) {
     console.error('Error deleting user:', error);
     res.redirect('/admin?error=Failed to delete user');
+  }
+});
+
+// Database export route
+router.get('/export/database', async (req, res) => {
+  try {
+    const path = require('path');
+    const fs = require('fs');
+    const { exec } = require('child_process');
+    
+    // Get database path from models/db.js
+    const dbPath = require('../models/db').dbPath || path.join(__dirname, '../data/afl_predictions.db');
+    
+    // Get current timestamp for filename
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `afl_predictions_${timestamp}.db`;
+    const backupPath = path.join(__dirname, '..', 'data', filename);
+    
+    // Copy the database file (this is safer than running the backup API)
+    fs.copyFile(dbPath, backupPath, (err) => {
+      if (err) {
+        console.error('Error creating database copy:', err);
+        return res.status(500).render('error', { error: 'Failed to create database backup' });
+      }
+      
+      // Send the file for download
+      res.download(backupPath, filename, (downloadErr) => {
+        if (downloadErr) {
+          console.error('Error sending file:', downloadErr);
+        }
+        
+        // Clean up - delete the temporary file after download
+        fs.unlink(backupPath, (unlinkErr) => {
+          if (unlinkErr) console.error('Error deleting temp file:', unlinkErr);
+        });
+      });
+    });
+  } catch (error) {
+    console.error('Error exporting database:', error);
+    res.status(500).render('error', { error: 'Failed to export database' });
   }
 });
 

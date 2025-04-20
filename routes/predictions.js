@@ -193,24 +193,24 @@ router.post('/save', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    // Check if match is locked (except for admins)
-    if (!req.session.isAdmin) {
-      const match = await getOne(
-        `SELECT m.match_date FROM matches m WHERE m.match_id = ?`,
-        [matchId]
-      );
-      
-      if (match && match.match_date) {
-        try {
-          const matchDate = new Date(match.match_date);
-          if (new Date() > matchDate) {
-            return res.status(403).json({ 
-              error: 'This match has started and predictions are locked' 
-            });
-          }
-        } catch (error) {
-          console.error('Error checking match lock status:', error);
+    // Check if match is locked (now applies to ALL users on this route)
+    const match = await getOne(
+      `SELECT m.match_date FROM matches m WHERE m.match_id = ?`,
+      [matchId]
+    );
+    
+    if (match && match.match_date) {
+      try {
+        const matchDate = new Date(match.match_date);
+        if (new Date() > matchDate) {
+          return res.status(403).json({ 
+            error: 'This match has started and predictions are locked' 
+          });
         }
+      } catch (error) {
+        console.error('Error checking match lock status:', error);
+        // Optionally, you might want to prevent saving if the date is invalid
+        // return res.status(500).json({ error: 'Error checking match status' });
       }
     }
     
