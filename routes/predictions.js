@@ -13,11 +13,13 @@ router.get('/', async (req, res) => {
     const currentYear = new Date().getFullYear();
     const selectedYear = req.query.year ? parseInt(req.query.year) : currentYear;
     
-    // Get all available years
-    const years = await getQuery(
-      'SELECT DISTINCT year FROM matches ORDER BY year DESC'
-    );
-    
+    // Get all available years (filtered for non-admin users)
+    let yearQuery = 'SELECT DISTINCT year FROM matches ORDER BY year DESC';
+    if (!req.session.isAdmin) {
+      yearQuery = 'SELECT DISTINCT year FROM matches WHERE year >= 2022 ORDER BY year DESC';
+    }
+    const years = await getQuery(yearQuery);
+        
     // Get all rounds for the selected year
     const rounds = await getQuery(
       `SELECT DISTINCT round_number 
