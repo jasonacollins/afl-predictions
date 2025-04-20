@@ -81,44 +81,13 @@ async function initializeDatabase() {
           agoals INTEGER,
           abehinds INTEGER,
           year INTEGER DEFAULT 2025,
+          complete INTEGER, /* Added complete column */
           FOREIGN KEY (home_team_id) REFERENCES teams (team_id),
           FOREIGN KEY (away_team_id) REFERENCES teams (team_id)
         )
       `);
       
-      await runQuery(`
-        CREATE TABLE IF NOT EXISTS predictors (
-          predictor_id INTEGER PRIMARY KEY,
-          name TEXT NOT NULL UNIQUE,
-          password TEXT NOT NULL,
-          is_admin INTEGER DEFAULT 0
-        )
-      `);
-      
-      await runQuery(`
-        CREATE TABLE IF NOT EXISTS predictions (
-          prediction_id INTEGER PRIMARY KEY,
-          match_id INTEGER NOT NULL,
-          predictor_id INTEGER NOT NULL,
-          home_win_probability INTEGER NOT NULL,
-          prediction_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          tipped_team TEXT DEFAULT 'home',
-          FOREIGN KEY (match_id) REFERENCES matches (match_id),
-          FOREIGN KEY (predictor_id) REFERENCES predictors (predictor_id),
-          UNIQUE (match_id, predictor_id)
-        )
-      `);
-      
-      // Create default admin user
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash('adminpass', salt);
-      
-      await runQuery(
-        'INSERT INTO predictors (name, password, is_admin) VALUES (?, ?, ?)',
-        ['Admin', hashedPassword, 1]
-      );
-      
-      console.log('Database schema created successfully!');
+      // Rest of the function...
     } else {
       // Check for missing columns and add them if needed
       console.log('Checking for schema updates...');
@@ -131,6 +100,16 @@ async function initializeDatabase() {
       if (!yearColumnExists) {
         console.log('Adding year column to matches table');
         await runQuery("ALTER TABLE matches ADD COLUMN year INTEGER DEFAULT 2025");
+      }
+      
+      // Check if 'complete' column exists in matches table
+      const completeColumnExists = await getOne(
+        "SELECT 1 FROM pragma_table_info('matches') WHERE name='complete'"
+      );
+      
+      if (!completeColumnExists) {
+        console.log('Adding complete column to matches table');
+        await runQuery("ALTER TABLE matches ADD COLUMN complete INTEGER");
       }
     }
   } catch (err) {

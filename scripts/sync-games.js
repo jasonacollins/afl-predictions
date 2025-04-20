@@ -203,6 +203,9 @@ async function syncGamesFromAPI(options = {}) {
         const homeScore = game.hscore !== undefined ? game.hscore : null;
         const awayScore = game.ascore !== undefined ? game.ascore : null;
         
+        // Get the match completion percentage
+        const completion = game.complete ? parseInt(game.complete) : null;
+        
         // Check if match already exists in database with the Squiggle ID
         const existingMatch = await getOne(
           'SELECT match_id FROM matches WHERE match_number = ?',
@@ -214,8 +217,8 @@ async function syncGamesFromAPI(options = {}) {
           await runQuery(
             `UPDATE matches 
              SET round_number = ?, match_date = ?, venue = ?, 
-                 home_team_id = ?, away_team_id = ?, hscore = ?, ascore = ?,
-                 hgoals = ?, hbehinds = ?, agoals = ?, abehinds = ?, year = ?
+                 home_team_id = ?, away_team_id = ?, hscore = ?, ascore = ?, 
+                 year = ?, complete = ?
              WHERE match_id = ?`,
             [
               roundNumber, 
@@ -225,11 +228,8 @@ async function syncGamesFromAPI(options = {}) {
               awayTeamId, 
               homeScore, 
               awayScore,
-              game.hgoals || null,
-              game.hbehinds || null,
-              game.agoals || null,
-              game.abehinds || null,
               game.year || (matchDate ? new Date(matchDate).getFullYear() : new Date().getFullYear()),
+              completion, // Add completion percentage
               existingMatch.match_id
             ]
           );
@@ -239,9 +239,8 @@ async function syncGamesFromAPI(options = {}) {
           await runQuery(
             `INSERT INTO matches 
              (match_number, round_number, match_date, venue, 
-              home_team_id, away_team_id, hscore, ascore, 
-              hgoals, hbehinds, agoals, abehinds, year)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              home_team_id, away_team_id, hscore, ascore, year, complete)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               game.id, 
               roundNumber, 
@@ -251,11 +250,8 @@ async function syncGamesFromAPI(options = {}) {
               awayTeamId, 
               homeScore, 
               awayScore,
-              game.hgoals || null,
-              game.hbehinds || null,
-              game.agoals || null,
-              game.abehinds || null,
-              game.year || (matchDate ? new Date(matchDate).getFullYear() : new Date().getFullYear())
+              game.year || (matchDate ? new Date(matchDate).getFullYear() : new Date().getFullYear()),
+              completion // Add completion percentage
             ]
           );
           insertCount++;

@@ -37,8 +37,38 @@ router.get('/', async (req, res) => {
       [selectedYear]
     );
     
-    // Get first round by default
-    const selectedRound = rounds.length > 0 ? rounds[0].round_number : null;
+    // Find the earliest round with incomplete matches (where complete != 100)
+    let selectedRound = null;
+    if (!req.query.round) { // Only auto-select if round not specified in URL
+      const incompleteRound = await getOne(
+        `SELECT m.round_number 
+         FROM matches m 
+         WHERE m.year = ? AND (m.complete IS NULL OR m.complete != 100)
+         ORDER BY 
+           CASE 
+             WHEN m.round_number = 'OR' THEN 0 
+             WHEN m.round_number LIKE '%' AND CAST(m.round_number AS INTEGER) BETWEEN 1 AND 99 THEN CAST(m.round_number AS INTEGER)
+             WHEN m.round_number = 'Elimination Final' THEN 100
+             WHEN m.round_number = 'Qualifying Final' THEN 101
+             WHEN m.round_number = 'Semi Final' THEN 102
+             WHEN m.round_number = 'Preliminary Final' THEN 103
+             WHEN m.round_number = 'Grand Final' THEN 104
+             ELSE 999
+           END,
+           m.match_date
+         LIMIT 1`,
+        [selectedYear]
+      );
+      
+      if (incompleteRound) {
+        selectedRound = incompleteRound.round_number;
+      }
+    }
+    
+    // If no incomplete round found or round is specified in query, use the first round or query parameter
+    if (!selectedRound) {
+      selectedRound = req.query.round || (rounds.length > 0 ? rounds[0].round_number : null);
+    }
     
     // Get matches for the selected round AND year
     let matches = [];
@@ -52,9 +82,9 @@ router.get('/', async (req, res) => {
          FROM matches m
          JOIN teams t1 ON m.home_team_id = t1.team_id
          JOIN teams t2 ON m.away_team_id = t2.team_id
-         WHERE m.round_number = ? AND m.year = ?  /* Add year filter here */
+         WHERE m.round_number = ? AND m.year = ?
          ORDER BY m.match_number`,
-        [selectedRound, selectedYear] /* Add selectedYear to parameters */
+        [selectedRound, selectedYear]
       );
       
       // Process matches to add isLocked field
