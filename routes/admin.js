@@ -11,9 +11,8 @@ router.use(isAdmin);
 
 // Password strength validation
 function isStrongPassword(password) {
-  // At least 8 chars, including uppercase, lowercase, number, and special char
-  const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-  return regex.test(password);
+  // At least 12 characters
+  return password && password.length >= 12;
 }
 
 // Admin dashboard
@@ -75,6 +74,11 @@ router.post('/predictors', async (req, res) => {
     // Validate input
     if (!username || !password) {
       return res.redirect('/admin?error=Username and password are required');
+    }
+    
+    // Check password length
+    if (!isStrongPassword(password)) {
+      return res.redirect('/admin?error=Password must be at least 12 characters');
     }
     
     // Check if user already exists
@@ -453,9 +457,9 @@ router.post('/reset-password/:userId', async (req, res) => {
       return res.redirect('/admin?error=New password is required');
     }
     
-    // Check password strength
+    // Check password length
     if (!isStrongPassword(newPassword)) {
-      return res.redirect('/admin?error=Password must be at least 8 characters and include uppercase, lowercase, number, and special character');
+      return res.redirect('/admin?error=Password must be at least 12 characters');
     }
     
     // Check if user exists
