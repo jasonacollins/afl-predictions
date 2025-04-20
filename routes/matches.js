@@ -16,8 +16,8 @@ async function ensureDefaultPredictions(selectedYear) {
     const completedMatches = await getQuery(`
       SELECT match_id, match_date 
       FROM matches 
-      WHERE home_score IS NOT NULL 
-      AND away_score IS NOT NULL
+      WHERE hscore IS NOT NULL 
+      AND ascore IS NOT NULL
       AND year = ?
     `, [selectedYear]);
     
@@ -170,7 +170,7 @@ router.get('/stats', async (req, res) => {
       FROM matches m
       JOIN teams t1 ON m.home_team_id = t1.team_id
       JOIN teams t2 ON m.away_team_id = t2.team_id
-      WHERE m.home_score IS NOT NULL AND m.away_score IS NOT NULL
+      WHERE m.hscore IS NOT NULL AND m.ascore IS NOT NULL
       AND m.year = ?
       ORDER BY m.match_date DESC
       LIMIT 10
@@ -182,7 +182,7 @@ router.get('/stats', async (req, res) => {
       FROM predictions p
       JOIN matches m ON p.match_id = m.match_id
       WHERE p.predictor_id = ?
-      AND m.home_score IS NOT NULL AND m.away_score IS NOT NULL
+      AND m.hscore IS NOT NULL AND m.ascore IS NOT NULL
       AND m.year = ?
     `, [req.session.user.id, selectedYear]);
     
@@ -192,11 +192,11 @@ router.get('/stats', async (req, res) => {
     for (const predictor of predictors) {
       // Get all predictions for this predictor with results for the selected year
       const predictionResults = await getQuery(`
-        SELECT p.*, m.home_score, m.away_score
+        SELECT p.*, m.hscore, m.ascore
         FROM predictions p
         JOIN matches m ON p.match_id = m.match_id
         WHERE p.predictor_id = ?
-        AND m.home_score IS NOT NULL AND m.away_score IS NOT NULL
+        AND m.hscore IS NOT NULL AND m.ascore IS NOT NULL
         AND m.year = ?
       `, [predictor.predictor_id, selectedYear]);
       
@@ -207,9 +207,9 @@ router.get('/stats', async (req, res) => {
       
       // Calculate metrics for each prediction
       predictionResults.forEach(pred => {
-        const homeWon = pred.home_score > pred.away_score;
-        const awayWon = pred.home_score < pred.away_score;
-        const tie = pred.home_score === pred.away_score;
+        const homeWon = pred.hscore > pred.ascore;
+        const awayWon = pred.hscore < pred.ascore;
+        const tie = pred.hscore === pred.ascore;
         
         // Determine outcome (1 if home team won, 0.5 if tie, 0 if away team won)
         const actualOutcome = homeWon ? 1 : (tie ? 0.5 : 0);

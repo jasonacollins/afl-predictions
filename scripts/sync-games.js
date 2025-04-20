@@ -213,8 +213,8 @@ async function syncGamesFromAPI(options = {}) {
           // Update existing match
           await runQuery(
             `UPDATE matches 
-             SET round_number = ?, match_date = ?, location = ?, 
-                 home_team_id = ?, away_team_id = ?, home_score = ?, away_score = ?, year = ?
+             SET round_number = ?, match_date = ?, venue = ?, 
+                 home_team_id = ?, away_team_id = ?, hscore = ?, ascore = ?, year = ?
              WHERE match_id = ?`,
             [
               roundNumber, 
@@ -233,8 +233,8 @@ async function syncGamesFromAPI(options = {}) {
           // Insert new match
           await runQuery(
             `INSERT INTO matches 
-             (match_number, round_number, match_date, location, 
-              home_team_id, away_team_id, home_score, away_score, year)
+             (match_number, round_number, match_date, venue, 
+              home_team_id, away_team_id, hscore, ascore, year)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               game.id, 

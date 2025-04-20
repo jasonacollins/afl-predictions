@@ -5,7 +5,8 @@ async function dailySync() {
   try {
     // Get current year
     const currentYear = new Date().getFullYear();
-    const results = await refreshAPIData(currentYear);
+    // Use default options (forceScoreUpdate = false for daily automated sync)
+    const results = await refreshAPIData(currentYear, { forceScoreUpdate: false });
     console.log(`Sync complete. Results: ${JSON.stringify(results)}`);
     process.exit(0);
   } catch (error) {

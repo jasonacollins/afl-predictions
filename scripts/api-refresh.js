@@ -7,16 +7,20 @@ const fetch = require('node-fetch'); // Or your preferred fetch library
  * and updates scores for completed games.
  * Assumes a 'complete' column (INTEGER) exists in the 'matches' table.
  * @param {number} year The year to refresh data for.
+ * @param {object} options Options for the refresh (e.g. forceScoreUpdate).
  * @returns {Promise<object>} An object indicating success or failure, along with counts.
  */
-async function refreshAPIData(year) {
+async function refreshAPIData(year, options = {}) {
   let insertCount = 0;
   let updateCount = 0; // For fixture updates (excluding scores/final completion)
   let scoresUpdated = 0; // Specifically for final score/completion updates
   const skippedFixtureUpdates = []; // Games skipped during initial insert/update phase
   const skippedScoreUpdates = []; // Games skipped during score update phase
 
-  console.log(`Starting API refresh process for year ${year}...`);
+  // Extract the override option (default to false)
+  const forceScoreUpdate = options.forceScoreUpdate || false;
+
+  console.log(`Starting API refresh process for year ${year}...${forceScoreUpdate ? ' (with force score update enabled)' : ''}`);
 
   try {
     // --- Fetching Teams (Placeholder) ---
@@ -73,20 +77,19 @@ async function refreshAPIData(year) {
     console.log(`Found ${completedGamesWithScores.length} fully completed games from API to potentially update in DB.`);
 
     // Define the SQL query to update final scores AND set completion to 100
-    // **MODIFIED** to use 'complete' field name
+    // MODIFIED to conditionally include the completion check based on override flag
     const scoreUpdateQuery = `
       UPDATE matches
       SET
-        home_score = ?,
-        away_score = ?,
+        hscore = ?,
+        ascore = ?,
         complete = 100 -- Set completion to 100 in 'complete' column
       WHERE
         match_number = ?
-        -- Optional: Add AND complete != 100 if you only want to update ONCE when it hits 100
-        AND (complete IS NULL OR complete != 100)
+        ${forceScoreUpdate ? '' : 'AND (complete IS NULL OR complete != 100)'}
     `;
 
-    console.log(`Attempting to update final scores and completion status in the database...`);
+    console.log(`Attempting to update final scores and completion status in the database...${forceScoreUpdate ? ' (force update mode)' : ''}`);
     for (const game of completedGamesWithScores) {
       // We already know game.complete is 100 here due to the filter
       const homeScore = parseInt(game.hscore, 10);
@@ -113,7 +116,7 @@ async function refreshAPIData(year) {
           // If changes is 0, it could be because the match wasn't found,
           // or because it was already complete=100 (due to the WHERE clause).
           // We only want to log a "skip" if the match wasn't found or if there's another unexpected issue.
-          const checkExistsQuery = 'SELECT complete, home_score, away_score FROM matches WHERE match_number = ?';
+          const checkExistsQuery = 'SELECT complete, hscore, ascore FROM matches WHERE match_number = ?';
           // Use getOne for SELECT queries expected to return a single row
           const existing = await getOne(checkExistsQuery, [squiggleGameId]); // <--- CHANGE runQuery to getOne
 
@@ -149,7 +152,8 @@ async function refreshAPIData(year) {
                          `Inserted Fixtures: ${insertCount}, Updated Fixtures: ${updateCount}, ` +
                          `Updated Final Scores/Completion: ${scoresUpdated}, ` + // Changed label
                          `Skipped Fixture Updates: ${skippedFixtureUpdates.length}, `+
-                         `Skipped Score Updates: ${skippedScoreUpdates.length}.`;
+                         `Skipped Score Updates: ${skippedScoreUpdates.length}.` +
+                         `${forceScoreUpdate ? ' (Force update mode was enabled)' : ''}`;
     console.log(finalMessage);
 
     return {
@@ -158,6 +162,7 @@ async function refreshAPIData(year) {
       insertCount,
       updateCount, // Fixture updates (might include partial completion %)
       scoresUpdated, // Rows where final score AND completion=100 were set
+      forceUpdate: forceScoreUpdate,
       skippedFixtureUpdateCount: skippedFixtureUpdates.length,
       skippedScoreUpdateCount: skippedScoreUpdates.length,
       // skippedFixtureUpdates: skippedFixtureUpdates.length > 0 ? skippedFixtureUpdates : null,
@@ -170,6 +175,7 @@ async function refreshAPIData(year) {
       success: false,
       message: `Error refreshing API data for year ${year}: ${error.message}`,
       error: error.message,
+      forceUpdate: forceScoreUpdate
       // ... return partial counts ...
     };
   }

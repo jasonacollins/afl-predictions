@@ -56,7 +56,7 @@
       <% matches.forEach(match => { %>
         <% 
           const isLocked = match.isLocked;
-          const hasResult = match.home_score !== null && match.away_score !== null;
+          const hasResult = match.hscore !== null && match.ascore !== null;
           let prediction = null;
           let tippedTeam = 'home';
           
@@ -80,7 +80,7 @@
         <div class="match-card <%= hasResult ? 'has-result' : '' %> <%= isLocked ? 'locked' : '' %>">
           <div class="match-header">
             <span class="match-date"><%= match.match_date %></span>
-            <span class="match-location"><%= match.location %></span>
+            <span class="match-venue"><%= match.venue %></span>
             <% if (isLocked) { %>
               <span class="match-locked">LOCKED</span>
             <% } %>
@@ -106,7 +106,7 @@
           
           <% if (hasResult) { %>
             <div class="match-result">
-              <span class="score"><%= match.home_score %> - <%= match.away_score %></span>
+              <span class="score"><%= match.hscore %> - <%= match.ascore %></span>
             </div>
           <% } %>
           
@@ -185,9 +185,9 @@
                   <p>Tipped: <%= tippedTeam === 'home' ? ((match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team) : ((match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team) %> to win</p>
                 <% } %>
                 <% 
-                  const homeWon = match.home_score > match.away_score;
-                  const awayWon = match.home_score < match.away_score;
-                  const tie = match.home_score === match.away_score;
+                  const homeWon = match.hscore > match.ascore;
+                  const awayWon = match.hscore < match.ascore;
+                  const tie = match.hscore === match.ascore;
                   
                   // Calculate tip points
                   let tipPoints = 0;

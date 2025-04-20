@@ -234,7 +234,7 @@ router.get('/stats', async (req, res) => {
       FROM matches m
       JOIN teams t1 ON m.home_team_id = t1.team_id
       JOIN teams t2 ON m.away_team_id = t2.team_id
-      WHERE m.home_score IS NOT NULL AND m.away_score IS NOT NULL
+      WHERE m.hscore IS NOT NULL AND m.ascore IS NOT NULL
       ORDER BY m.match_date DESC
     `);
     
@@ -244,7 +244,7 @@ router.get('/stats', async (req, res) => {
       FROM predictions p
       JOIN predictors pr ON p.predictor_id = pr.predictor_id
       JOIN matches m ON p.match_id = m.match_id
-      WHERE m.home_score IS NOT NULL AND m.away_score IS NOT NULL
+      WHERE m.hscore IS NOT NULL AND m.ascore IS NOT NULL
     `);
     
     // Calculate accuracy for each predictor
@@ -266,9 +266,9 @@ router.get('/stats', async (req, res) => {
       const match = completedMatches.find(m => m.match_id === prediction.match_id);
       
       if (match) {
-        const homeWon = match.home_score > match.away_score;
-        const awayWon = match.home_score < match.away_score;
-        const tie = match.home_score === match.away_score;
+        const homeWon = match.hscore > match.ascore;
+        const awayWon = match.hscore < match.ascore;
+        const tie = match.hscore === match.ascore;
         
         const correctPrediction = 
           (homeWon && prediction.home_win_probability > 50) || 
@@ -319,8 +319,8 @@ router.get('/export/predictions', async (req, res) => {
         m.match_date,
         t1.name as home_team,
         t2.name as away_team,
-        m.home_score,
-        m.away_score
+        m.hscore,
+        m.ascore
       FROM predictions p
       JOIN predictors pr ON p.predictor_id = pr.predictor_id
       JOIN matches m ON p.match_id = m.match_id
@@ -338,12 +338,12 @@ router.get('/export/predictions', async (req, res) => {
     
     // Add prediction rows
     predictions.forEach(prediction => {
-      const homeWon = prediction.home_score !== null && prediction.away_score !== null && 
-                    prediction.home_score > prediction.away_score;
-      const awayWon = prediction.home_score !== null && prediction.away_score !== null && 
-                    prediction.home_score < prediction.away_score;
-      const tie = prediction.home_score !== null && prediction.away_score !== null && 
-                prediction.home_score === prediction.away_score;
+      const homeWon = prediction.hscore !== null && prediction.ascore !== null && 
+                    prediction.hscore > prediction.ascore;
+      const awayWon = prediction.hscore !== null && prediction.ascore !== null && 
+                    prediction.hscore < prediction.ascore;
+      const tie = prediction.hscore !== null && prediction.ascore !== null && 
+                prediction.hscore === prediction.ascore;
       
       // Default tipped team for 50% predictions if not stored
       let tippedTeam = prediction.tipped_team || 'home';
@@ -353,7 +353,7 @@ router.get('/export/predictions', async (req, res) => {
       let brierScore = '';
       let bitsScore = '';
       
-      if (prediction.home_score !== null && prediction.away_score !== null) {
+      if (prediction.hscore !== null && prediction.ascore !== null) {
         // For 50% predictions, use the tipped team to determine correctness
         if (prediction.home_win_probability === 50) {
           if (tie) {
@@ -425,8 +425,8 @@ router.get('/export/predictions', async (req, res) => {
       csvData += `${prediction.home_win_probability},`;
       csvData += `${100 - prediction.home_win_probability},`;
       csvData += `"${displayTippedTeam}",`;
-      csvData += `${prediction.home_score || ''},`;
-      csvData += `${prediction.away_score || ''},`;
+      csvData += `${prediction.hscore || ''},`;
+      csvData += `${prediction.ascore || ''},`;
       csvData += `"${correct}",`;
       csvData += `${tipPoints.toFixed(1)},`;
       csvData += `${brierScore},`;
@@ -488,13 +488,16 @@ router.post('/reset-password/:userId', async (req, res) => {
 router.post('/api-refresh', async (req, res) => {
   try {
     const year = req.body.year || new Date().getFullYear();
-    console.log(`API refresh requested for year ${year}`);
+    // Get the forceScoreUpdate flag from the request body (default to false)
+    const forceScoreUpdate = req.body.forceScoreUpdate === 'true' || req.body.forceScoreUpdate === true;
     
-    // Import the new module
+    console.log(`API refresh requested for year ${year} ${forceScoreUpdate ? 'with force update enabled' : ''}`);
+    
+    // Import the refreshAPIData function
     const { refreshAPIData } = require('../scripts/api-refresh');
     
-    // Call the function
-    const result = await refreshAPIData(parseInt(year));
+    // Call the function with the year and options object
+    const result = await refreshAPIData(parseInt(year), { forceScoreUpdate });
     
     // Return the result
     return res.json(result);

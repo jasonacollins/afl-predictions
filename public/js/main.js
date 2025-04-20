@@ -82,7 +82,7 @@ function renderMatches(matches) {
   
   matches.forEach(match => {
     const isLocked = match.isLocked;
-    const hasResult = match.home_score !== null && match.away_score !== null;
+    const hasResult = match.hscore !== null && match.ascore !== null;
     
     // Get prediction data
     let prediction = '';
@@ -108,7 +108,7 @@ function renderMatches(matches) {
       <div class="match-card ${hasResult ? 'has-result' : ''} ${isLocked ? 'locked' : ''}">
         <div class="match-header">
           <span class="match-date" data-original-date="${match.match_date}">${formatDateToLocalTimezone(match.match_date)}</span>
-          <span class="match-location">${match.location}</span>
+          <span class="match-venue">${match.venue}</span>
           ${isLocked ? '<span class="match-locked">LOCKED</span>' : ''}
         </div>
         
@@ -120,7 +120,7 @@ function renderMatches(matches) {
         
         ${hasResult ? `
           <div class="match-result">
-            <span class="score">${match.home_score} - ${match.away_score}</span>
+            <span class="score">${match.hscore} - ${match.ascore}</span>
           </div>
         ` : ''}
         
@@ -207,13 +207,13 @@ function renderMatches(matches) {
 
 // Calculate prediction accuracy text
 function calculateAccuracy(match, prediction, tippedTeam) {
-  if (match.home_score === null || match.away_score === null || prediction === '') {
+  if (match.hscore === null || match.ascore === null || prediction === '') {
     return '';
   }
   
-  const homeWon = match.home_score > match.away_score;
-  const awayWon = match.home_score < match.away_score;
-  const tie = match.home_score === match.away_score;
+  const homeWon = match.hscore > match.ascore;
+  const awayWon = match.hscore < match.ascore;
+  const tie = match.hscore === match.ascore;
   
   // Calculate all metrics
   const prob = parseInt(prediction) / 100;
@@ -387,7 +387,7 @@ function updateRoundButtonStates() {
       
       // Round is completed if all matches have scores
       const isCompleted = matches.length > 0 && matches.every(match => 
-        match.home_score !== null && match.away_score !== null
+        match.hscore !== null && match.ascore !== null
       );
       
       // 2. Check if the round has any predictions
