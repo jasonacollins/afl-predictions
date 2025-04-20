@@ -43,11 +43,15 @@ function fetchMatchesForRound(round) {
     matchesContainer.innerHTML = '<div class="loading">Loading matches...</div>';
   }
   
-  // Update UI to show selected round
+  // Update UI to show selected round - MODIFIED PART
   const roundButtons = document.querySelectorAll('.round-button');
   roundButtons.forEach(btn => {
+    // Keep any existing state classes (completed, has-predictions, needs-predictions)
+    // but remove the 'selected' class
     btn.classList.remove('selected');
+    
     if (btn.dataset.round === round) {
+      // Add selected class (this will override other colors due to !important)
       btn.classList.add('selected');
     }
   });
@@ -124,7 +128,7 @@ function renderMatches(matches) {
           </div>
         ` : ''}
         
-        ${(!isLocked || window.isAdmin) ? `
+        ${!isLocked ? `
           <div class="prediction-controls">
             <div class="prediction-inputs">
               <div class="team-prediction">
