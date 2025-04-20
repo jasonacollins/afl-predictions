@@ -218,6 +218,7 @@ async function syncGamesFromAPI(options = {}) {
             `UPDATE matches 
              SET round_number = ?, match_date = ?, venue = ?, 
                  home_team_id = ?, away_team_id = ?, hscore = ?, ascore = ?, 
+                 hgoals = ?, hbehinds = ?, agoals = ?, abehinds = ?,
                  year = ?, complete = ?
              WHERE match_id = ?`,
             [
@@ -228,8 +229,12 @@ async function syncGamesFromAPI(options = {}) {
               awayTeamId, 
               homeScore, 
               awayScore,
+              game.hgoals || null,
+              game.hbehinds || null,
+              game.agoals || null,
+              game.abehinds || null,
               game.year || (matchDate ? new Date(matchDate).getFullYear() : new Date().getFullYear()),
-              completion, // Add completion percentage
+              completion,
               existingMatch.match_id
             ]
           );
@@ -238,9 +243,9 @@ async function syncGamesFromAPI(options = {}) {
           // Insert new match
           await runQuery(
             `INSERT INTO matches 
-             (match_number, round_number, match_date, venue, 
-              home_team_id, away_team_id, hscore, ascore, year, complete)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (match_number, round_number, match_date, venue, 
+              home_team_id, away_team_id, hscore, ascore, hgoals, hbehinds, agoals, abehinds, year, complete)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               game.id, 
               roundNumber, 
@@ -250,6 +255,10 @@ async function syncGamesFromAPI(options = {}) {
               awayTeamId, 
               homeScore, 
               awayScore,
+              game.hgoals || null,
+              game.hbehinds || null,
+              game.agoals || null,
+              game.abehinds || null,
               game.year || (matchDate ? new Date(matchDate).getFullYear() : new Date().getFullYear()),
               completion // Add completion percentage
             ]
