@@ -214,7 +214,8 @@ async function syncGamesFromAPI(options = {}) {
           await runQuery(
             `UPDATE matches 
              SET round_number = ?, match_date = ?, venue = ?, 
-                 home_team_id = ?, away_team_id = ?, hscore = ?, ascore = ?, year = ?
+                 home_team_id = ?, away_team_id = ?, hscore = ?, ascore = ?,
+                 hgoals = ?, hbehinds = ?, agoals = ?, abehinds = ?, year = ?
              WHERE match_id = ?`,
             [
               roundNumber, 
@@ -224,6 +225,10 @@ async function syncGamesFromAPI(options = {}) {
               awayTeamId, 
               homeScore, 
               awayScore,
+              game.hgoals || null,
+              game.hbehinds || null,
+              game.agoals || null,
+              game.abehinds || null,
               game.year || (matchDate ? new Date(matchDate).getFullYear() : new Date().getFullYear()),
               existingMatch.match_id
             ]
@@ -234,8 +239,9 @@ async function syncGamesFromAPI(options = {}) {
           await runQuery(
             `INSERT INTO matches 
              (match_number, round_number, match_date, venue, 
-              home_team_id, away_team_id, hscore, ascore, year)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              home_team_id, away_team_id, hscore, ascore, 
+              hgoals, hbehinds, agoals, abehinds, year)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               game.id, 
               roundNumber, 
@@ -245,6 +251,10 @@ async function syncGamesFromAPI(options = {}) {
               awayTeamId, 
               homeScore, 
               awayScore,
+              game.hgoals || null,
+              game.hbehinds || null,
+              game.agoals || null,
+              game.abehinds || null,
               game.year || (matchDate ? new Date(matchDate).getFullYear() : new Date().getFullYear())
             ]
           );

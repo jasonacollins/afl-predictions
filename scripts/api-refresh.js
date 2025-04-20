@@ -83,6 +83,10 @@ async function refreshAPIData(year, options = {}) {
       SET
         hscore = ?,
         ascore = ?,
+        hgoals = ?,
+        hbehinds = ?,
+        agoals = ?,
+        abehinds = ?,
         complete = 100 -- Set completion to 100 in 'complete' column
       WHERE
         match_number = ?
@@ -104,7 +108,15 @@ async function refreshAPIData(year, options = {}) {
       }
 
       // Params for the score update query
-      const params = [homeScore, awayScore, squiggleGameId];
+      const params = [
+        homeScore, 
+        awayScore,
+        game.hgoals || null,
+        game.hbehinds || null,
+        game.agoals || null,
+        game.abehinds || null,
+        squiggleGameId
+      ];      
 
       try {
         const result = await runQuery(scoreUpdateQuery, params);
