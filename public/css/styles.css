@@ -540,6 +540,70 @@ textarea {
   margin-bottom: 2rem;
 }
 
+/* Modal Styles */
+.modal {
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.4);
+}
+
+.modal-content {
+  background-color: white;
+  margin: 15% auto;
+  padding: 20px;
+  border-radius: 8px;
+  width: 80%;
+  max-width: 500px;
+}
+
+.close {
+  float: right;
+  font-size: 24px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.warning-message {
+  background-color: #fff3cd;
+  border: 1px solid #ffeeba;
+  color: #856404;
+  padding: 10px;
+  margin-bottom: 15px;
+  border-radius: 4px;
+}
+
+/* Clear button styles */
+.clear-prediction {
+  display: block;
+  width: 100%;
+  padding: 0.5rem;
+  background-color: #ff9800;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-top: 8px;
+}
+
+.clear-prediction:hover {
+  background-color: #e68a00;
+}
+
+/* Prediction deletion state */
+.save-prediction.delete-state {
+  background-color: #ff9800;
+}
+
+.save-prediction.delete-state:hover {
+  background-color: #e68a00;
+}
+
 /* Responsive Styles */
 @media (min-width: 768px) {
   .stats-container {

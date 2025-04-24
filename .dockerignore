@@ -3,5 +3,7 @@ npm-debug.log
 data/*.db
 data/sessions.db
 data/cache
+data/temp
+data/backups
 .git
 .gitignore

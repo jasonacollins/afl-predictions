@@ -29,7 +29,7 @@ router.get('/', async (req, res) => {
     
     // Get all predictors
     const predictors = await getQuery(
-      'SELECT predictor_id, name, is_admin FROM predictors ORDER BY name'
+      'SELECT predictor_id, name, is_admin, year_joined FROM predictors ORDER BY name'
     );
     
     // Get all rounds for the selected year
@@ -69,7 +69,7 @@ router.get('/', async (req, res) => {
 // Add new predictor
 router.post('/predictors', async (req, res) => {
   try {
-    const { username, password, isAdmin } = req.body;
+    const { username, password, isAdmin, yearJoined } = req.body;
     
     // Validate input
     if (!username || !password) {
@@ -98,10 +98,13 @@ router.post('/predictors', async (req, res) => {
     // Convert isAdmin to integer (checkbox value)
     const isAdminValue = isAdmin === 'on' ? 1 : 0;
     
+    // Get year joined - default to current year if not provided
+    const yearJoinedValue = yearJoined ? parseInt(yearJoined) : new Date().getFullYear();
+    
     // Insert new predictor
     await runQuery(
-      'INSERT INTO predictors (name, password, is_admin) VALUES (?, ?, ?)',
-      [username, hashedPassword, isAdminValue]
+      'INSERT INTO predictors (name, password, is_admin, year_joined) VALUES (?, ?, ?, ?)',
+      [username, hashedPassword, isAdminValue, yearJoinedValue]
     );
     
     res.redirect('/admin?success=Predictor added successfully');

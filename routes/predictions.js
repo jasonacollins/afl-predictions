@@ -16,7 +16,12 @@ router.get('/', async (req, res) => {
     // Get all available years (filtered for non-admin users)
     let yearQuery = 'SELECT DISTINCT year FROM matches ORDER BY year DESC';
     if (!req.session.isAdmin) {
-      yearQuery = 'SELECT DISTINCT year FROM matches WHERE year >= 2022 ORDER BY year DESC';
+      // Get the user's year_joined
+      const user = await getOne('SELECT year_joined FROM predictors WHERE predictor_id = ?', [req.session.user.id]);
+      const userYearJoined = user.year_joined || 2022;
+      
+      // Filter years based on when the user joined
+      yearQuery = `SELECT DISTINCT year FROM matches WHERE year >= ${userYearJoined} ORDER BY year DESC`;
     }
     const years = await getQuery(yearQuery);
         

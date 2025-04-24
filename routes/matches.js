@@ -9,8 +9,8 @@ router.use(isAuthenticated);
 // This function ensures all predictors have predictions for all completed matches
 async function ensureDefaultPredictions(selectedYear) {
   try {
-    // Get all predictors
-    const predictors = await getQuery('SELECT predictor_id FROM predictors');
+    // Get all predictors with their year_joined
+    const predictors = await getQuery('SELECT predictor_id, year_joined FROM predictors');
     
     // Get all completed matches for the selected year with match dates
     const completedMatches = await getQuery(`
@@ -26,6 +26,12 @@ async function ensureDefaultPredictions(selectedYear) {
     
     // For each predictor, check if they have predictions for all completed matches
     for (const predictor of predictors) {
+      // Skip if predictor joined after the selected year
+      if (predictor.year_joined && predictor.year_joined > selectedYear) {
+        console.log(`Skipping predictor ${predictor.predictor_id}: joined in ${predictor.year_joined}, selected year is ${selectedYear}`);
+        continue;
+      }
+      
       for (const match of completedMatches) {
         // Only create default predictions for matches that have already occurred
         let matchInPast = true;

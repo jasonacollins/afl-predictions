@@ -16,7 +16,7 @@ COPY . .
 COPY crontab /etc/crontabs/root
 
 # Create data directory for SQLite and logs directory
-RUN mkdir -p data
+RUN mkdir -p data data/temp data/backups
 RUN mkdir -p /var/log && touch /var/log/afl-sync.log
 
 # Expose port
