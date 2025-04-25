@@ -31,7 +31,7 @@
       
       <% if (predictorStats.length === 0 || predictorStats.every(stat => stat.totalPredictions === 0)) { %>
         <div class="no-stats">
-          <p>No prediction results available yet for <%= selectedYear %>. Statistics will appear once matches are completed.</p>
+          <p>No prediction results available.</p>
         </div>
       <% } else { %>
         <table class="stats-table">
