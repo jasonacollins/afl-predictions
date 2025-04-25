@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getQuery, getOne, runQuery } = require('../models/db');
 const { isAuthenticated } = require('./auth');
+const scoringService = require('../services/scoring-service');  // Add this line
 
 // Require authentication for all prediction routes
 router.use(isAuthenticated);
@@ -134,7 +135,9 @@ router.get('/', async (req, res) => {
       rounds,
       selectedRound,
       matches,
-      predictions: predictionsMap
+      predictions: predictionsMap,
+      calculateTipPoints: scoringService.calculateTipPoints,
+      calculateBrierScore: scoringService.calculateBrierScore
     });
   } catch (error) {
     console.error('Error loading predictions page:', error);

@@ -219,47 +219,24 @@ function calculateAccuracy(match, prediction, tippedTeam) {
   const awayWon = match.hscore < match.ascore;
   const tie = match.hscore === match.ascore;
   
-  // Calculate all metrics
-  const prob = parseInt(prediction) / 100;
+  // Determine actual outcome
   const actualOutcome = homeWon ? 1 : (tie ? 0.5 : 0);
   
-  // Calculate Brier score
-  const brierScore = Math.pow(prob - actualOutcome, 2).toFixed(4);
+  // Calculate Brier score using the global function
+  const brierScore = calculateBrierScore(parseInt(prediction), actualOutcome).toFixed(4);
   
-  // Calculate Bits score
-  const safeProb = Math.max(0.001, Math.min(0.999, prob));
-  let bitsScore;
-  if (homeWon) {
-    bitsScore = (1 + Math.log2(safeProb)).toFixed(4);
-  } else if (awayWon) {
-    bitsScore = (1 + Math.log2(1 - safeProb)).toFixed(4);
-  } else {
-    bitsScore = (1 + Math.log2(1 - Math.abs(0.5 - safeProb))).toFixed(4);
-  }
+  // Calculate Bits score using the global function  
+  const bitsScore = calculateBitsScore(parseInt(prediction), actualOutcome).toFixed(4);
   
-  // Calculate tip points - with new logic for 50% predictions
-  let tipPoints = 0;
+  // Calculate tip points using the global function
+  const tipPoints = calculateTipPoints(parseInt(prediction), match.hscore, match.ascore, tippedTeam);
+  
+  // Determine tip class
   let tipClass = "incorrect";
-  
-  if (parseInt(prediction) === 50) {
-    // For 50% predictions, use the tipped team
-    if ((homeWon && tippedTeam === 'home') || (awayWon && tippedTeam === 'away')) {
-      tipPoints = 1;
-      tipClass = "correct";
-    } else if (tie) {
-      // One point for tie regardless of tip
-      tipPoints = 1;
-      tipClass = "partial";
-    }
-  } else {
-    // Standard logic for non-50% predictions
-    if ((homeWon && prediction > 50) || (awayWon && prediction < 50)) {
-      tipPoints = 1;
-      tipClass = "correct";
-    } else if (tie) {
-      tipPoints = 1;
-      tipClass = "partial";
-    }
+  if (tipPoints === 1) {
+    tipClass = "correct";
+  } else if (tie && parseInt(prediction) !== 50) {
+    tipClass = "partial";
   }
   
   return `<div class="metrics-details">

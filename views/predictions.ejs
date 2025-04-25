@@ -189,53 +189,29 @@
                   const awayWon = match.hscore < match.ascore;
                   const tie = match.hscore === match.ascore;
                   
-                  // Calculate tip points
-                  let tipPoints = 0;
+                  // Calculate tip points using centralized function
+                  const tipPoints = calculateTipPoints(parseInt(prediction), match.hscore, match.ascore, tippedTeam);
+
+                  // Determine tip class based on the result
                   let tipClass = "";
-                  let resultText = "";
-                  
-                  if (parseInt(prediction) === 50) {
-                    // For 50% predictions, use tipped team
-                    if (tie) {
-                      tipPoints = 1;
-                      tipClass = "partial";
-                    } else if ((homeWon && tippedTeam === 'home') || (awayWon && tippedTeam === 'away')) {
-                      tipPoints = 1;
-                      tipClass = "correct";
-                    } else {
-                      tipPoints = 0;
-                      tipClass = "incorrect";
-                    }
+                  if (tipPoints === 1) {
+                    tipClass = "correct";
+                  } else if (tie && parseInt(prediction) !== 50) {
+                    tipClass = "partial";
                   } else {
-                    // For other predictions, standard logic
-                    if (tie) {
-                      tipPoints = 0;
-                      tipClass = "partial";
-                    } else if ((homeWon && parseInt(prediction) > 50) || (awayWon && parseInt(prediction) < 50)) {
-                      tipPoints = 1;
-                      tipClass = "correct";
-                    } else {
-                      tipPoints = 0;
-                      tipClass = "incorrect";
-                    }
+                    tipClass = "incorrect";
                   }
                   
-                  // Calculate Brier score
-                  const prob = parseInt(prediction) / 100;
+                  // Determine actual outcome
                   const actualOutcome = homeWon ? 1 : (tie ? 0.5 : 0);
-                  const brierScore = Math.pow(prob - actualOutcome, 2).toFixed(4);
-                  
-                  // Calculate Bits score
+
+                  // Calculate Brier score using centralized function
+                  const brierScore = calculateBrierScore(parseInt(prediction), actualOutcome).toFixed(4);
+
+                  // Calculate Bits score using centralized function
                   let bitsScore = "0.0000";
                   try {
-                    const safeProb = Math.max(0.001, Math.min(0.999, prob));
-                    if (homeWon) {
-                      bitsScore = (1 + Math.log2(safeProb)).toFixed(4);
-                    } else if (awayWon) {
-                      bitsScore = (1 + Math.log2(1 - safeProb)).toFixed(4);
-                    } else {
-                      bitsScore = (1 + Math.log2(1 - Math.abs(0.5 - safeProb))).toFixed(4);
-                    }
+                    bitsScore = calculateBitsScore(parseInt(prediction), actualOutcome).toFixed(4);
                   } catch (e) {
                     console.error("Error calculating bits score:", e);
                   }

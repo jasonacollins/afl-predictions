@@ -4,6 +4,7 @@ const router = express.Router();
 const { getQuery, getOne, runQuery } = require('../models/db');
 const { isAuthenticated, isAdmin } = require('./auth');
 const sqlite3 = require('sqlite3').verbose();
+const scoringService = require('../services/scoring-service');
 
 // Require authentication and admin for all admin routes
 router.use(isAuthenticated);
@@ -362,50 +363,38 @@ router.get('/export/predictions', async (req, res) => {
       let bitsScore = '';
       
       if (prediction.hscore !== null && prediction.ascore !== null) {
-        // For 50% predictions, use the tipped team to determine correctness
-        if (prediction.home_win_probability === 50) {
-          if (tie) {
-            correct = 'No';
-            tipPoints = 0;
-          } else {
-            const correctPrediction = (homeWon && tippedTeam === 'home') || (awayWon && tippedTeam === 'away');
-            correct = correctPrediction ? 'Yes' : 'No';
-            tipPoints = correctPrediction ? 1 : 0;
-          }
-        } else {
-          // For other predictions, use standard logic
-          const correctPrediction = 
-            (homeWon && prediction.home_win_probability > 50) || 
-            (awayWon && prediction.home_win_probability < 50);
-            
-          correct = correctPrediction ? 'Yes' : 'No';
-          
-          if (tie) {
-            tipPoints = 0;
-          } else {
-            tipPoints = correctPrediction ? 1 : 0;
-          }
-        }
+        const homeWon = prediction.hscore > prediction.ascore;
+        const awayWon = prediction.hscore < prediction.ascore;
+        const tie = prediction.hscore === prediction.ascore;
+        
+        // Default tipped team for 50% predictions if not stored
+        let tippedTeam = prediction.tipped_team || 'home';
+        
+        // Calculate tip points using scoring service
+        tipPoints = scoringService.calculateTipPoints(
+          prediction.home_win_probability, 
+          prediction.hscore, 
+          prediction.ascore, 
+          tippedTeam
+        );
+        
+        // Determine actual outcome for scoring
+        const actualOutcome = homeWon ? 1 : (tie ? 0.5 : 0);
         
         // Calculate Brier score
-        const prob = prediction.home_win_probability / 100;
-        const actualOutcome = homeWon ? 1 : (tie ? 0.5 : 0);
-        brierScore = Math.pow(prob - actualOutcome, 2).toFixed(4);
+        brierScore = scoringService.calculateBrierScore(
+          prediction.home_win_probability, 
+          actualOutcome
+        ).toFixed(4);
         
         // Calculate Bits score
-        try {
-          const safeProb = Math.max(0.001, Math.min(0.999, prob));
-          if (homeWon) {
-            bitsScore = (1 + Math.log2(safeProb)).toFixed(4);
-          } else if (awayWon) {
-            bitsScore = (1 + Math.log2(1 - safeProb)).toFixed(4);
-          } else { // tie
-            bitsScore = (1 + Math.log2(1 - Math.abs(0.5 - safeProb))).toFixed(4);
-          }
-        } catch (error) {
-          console.error('Error calculating bits score:', error);
-          bitsScore = 'Error';
-        }
+        bitsScore = scoringService.calculateBitsScore(
+          prediction.home_win_probability, 
+          actualOutcome
+        ).toFixed(4);
+        
+        // Set correct class
+        correct = tipPoints === 1 ? 'Yes' : 'No';
       }
       
       // Format date for CSV

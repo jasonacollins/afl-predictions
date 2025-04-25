@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getQuery, getOne, runQuery } = require('../models/db');
 const { isAuthenticated } = require('./auth');
+const scoringService = require('../services/scoring-service');
 
 // Require authentication for all matches routes
 router.use(isAuthenticated);
@@ -224,49 +225,19 @@ router.get('/stats', async (req, res) => {
         // Determine outcome (1 if home team won, 0.5 if tie, 0 if away team won)
         const actualOutcome = homeWon ? 1 : (tie ? 0.5 : 0);
         
-        // Calculate Brier score: (forecast - outcome)^2
-        const probability = pred.home_win_probability / 100;
-        const brierScore = Math.pow(probability - actualOutcome, 2);
+        // Use scoring service
+        const brierScore = scoringService.calculateBrierScore(pred.home_win_probability, actualOutcome);
         totalBrierScore += brierScore;
         
-        // Calculate Bits score
-        let bitsScore;
-        const safeProb = Math.max(0.001, Math.min(0.999, probability));
-        
-        if (homeWon) {
-          bitsScore = 1 + Math.log2(safeProb);
-        } else if (awayWon) {
-          bitsScore = 1 + Math.log2(1 - safeProb);
-        } else { // tie
-          bitsScore = 1 + Math.log2(1 - Math.abs(0.5 - safeProb));
-        }
+        const bitsScore = scoringService.calculateBitsScore(pred.home_win_probability, actualOutcome);
         totalBitsScore += bitsScore;
         
         // Get tipped team (default to home if not stored)
         const tippedTeam = pred.tipped_team || 'home';
         
-        // Calculate tip points with the revised logic
-        if (pred.home_win_probability === 50) {
-          // For 50% predictions, use tipped team
-          if (tie) {
-            // No points for draws
-            tipPoints += 0;
-          } else if ((homeWon && tippedTeam === 'home') || (awayWon && tippedTeam === 'away')) {
-            // Correctly tipped
-            tipPoints += 1;
-          }
-          // Else 0 points for incorrect tip
-        } else {
-          // For non-50% predictions, standard logic
-          if (tie) {
-            // No points for draws
-            tipPoints += 0;
-          } else if ((homeWon && pred.home_win_probability > 50) || (awayWon && pred.home_win_probability < 50)) {
-            // Correctly predicted
-            tipPoints += 1;
-          }
-          // Else 0 points for incorrect prediction
-        }
+        // Calculate tip points
+        const tipPointsForPred = scoringService.calculateTipPoints(pred.home_win_probability, pred.hscore, pred.ascore, tippedTeam);
+        tipPoints += tipPointsForPred;
       });
       
       // Calculate averages and percentages
