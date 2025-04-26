@@ -2,7 +2,11 @@ const express = require('express');
 const router = express.Router();
 const { getQuery, getOne, runQuery } = require('../models/db');
 const { isAuthenticated } = require('./auth');
-const scoringService = require('../services/scoring-service');  // Add this line
+const scoringService = require('../services/scoring-service');
+const roundService = require('../services/round-service');
+const matchService = require('../services/match-service');
+const predictionService = require('../services/prediction-service');
+const predictorService = require('../services/predictor-service');
 
 // Require authentication for all prediction routes
 router.use(isAuthenticated);
@@ -27,23 +31,7 @@ router.get('/', async (req, res) => {
     const years = await getQuery(yearQuery);
         
     // Get all rounds for the selected year
-    const rounds = await getQuery(
-      `SELECT DISTINCT round_number 
-       FROM matches 
-       WHERE year = ?
-       ORDER BY 
-         CASE 
-           WHEN round_number = 'OR' THEN 0 
-           WHEN round_number LIKE '%' AND CAST(round_number AS INTEGER) BETWEEN 1 AND 99 THEN CAST(round_number AS INTEGER)
-           WHEN round_number = 'Elimination Final' THEN 100
-           WHEN round_number = 'Qualifying Final' THEN 101
-           WHEN round_number = 'Semi Final' THEN 102
-           WHEN round_number = 'Preliminary Final' THEN 103
-           WHEN round_number = 'Grand Final' THEN 104
-           ELSE 999
-         END`,
-      [selectedYear]
-    );
+    const rounds = await roundService.getRoundsForYear(selectedYear);
     
     // Find the earliest round with incomplete matches (where complete != 100)
     let selectedRound = null;
@@ -52,18 +40,8 @@ router.get('/', async (req, res) => {
         `SELECT m.round_number 
          FROM matches m 
          WHERE m.year = ? AND (m.complete IS NULL OR m.complete != 100)
-         ORDER BY 
-           CASE 
-             WHEN m.round_number = 'OR' THEN 0 
-             WHEN m.round_number LIKE '%' AND CAST(m.round_number AS INTEGER) BETWEEN 1 AND 99 THEN CAST(m.round_number AS INTEGER)
-             WHEN m.round_number = 'Elimination Final' THEN 100
-             WHEN m.round_number = 'Qualifying Final' THEN 101
-             WHEN m.round_number = 'Semi Final' THEN 102
-             WHEN m.round_number = 'Preliminary Final' THEN 103
-             WHEN m.round_number = 'Grand Final' THEN 104
-             ELSE 999
-           END,
-           m.match_date
+         ORDER BY ${roundService.ROUND_ORDER_SQL},
+         m.match_date
          LIMIT 1`,
         [selectedYear]
       );
@@ -81,47 +59,13 @@ router.get('/', async (req, res) => {
     // Get matches for the selected round AND year
     let matches = [];
     if (selectedRound) {
-      matches = await getQuery(
-        `SELECT m.*, 
-         t1.name as home_team, 
-         t1.abbrev as home_team_abbrev,
-         t2.name as away_team,
-         t2.abbrev as away_team_abbrev 
-         FROM matches m
-         JOIN teams t1 ON m.home_team_id = t1.team_id
-         JOIN teams t2 ON m.away_team_id = t2.team_id
-         WHERE m.round_number = ? AND m.year = ?
-         ORDER BY m.match_number`,
-        [selectedRound, selectedYear]
-      );
-      
-      // Process matches to add isLocked field
-      matches = matches.map(match => {
-        let isLocked = false;
-        
-        if (match.match_date) {
-          try {
-            // Date should be in ISO format after import
-            const matchDate = new Date(match.match_date);
-            isLocked = new Date() > matchDate;
-          } catch (error) {
-            console.error('Error parsing date:', match.match_date);
-          }
-        }
-        
-        return {
-          ...match,
-          isLocked
-        };
-      });
+      matches = await matchService.getMatchesByRoundAndYear(selectedRound, selectedYear);
+      matches = matchService.processMatchLockStatus(matches);
     }
     
     // Get user predictions
     const predictorId = req.session.user.id;
-    const userPredictions = await getQuery(
-      'SELECT * FROM predictions WHERE predictor_id = ?',
-      [predictorId]
-    );
+    const userPredictions = await predictionService.getPredictionsForUser(req.session.user.id);
     
     // Create predictions map
     const predictionsMap = {};
@@ -152,40 +96,8 @@ router.get('/round/:round', async (req, res) => {
     const round = req.params.round;
     const year = req.query.year || new Date().getFullYear();
     
-    const matches = await getQuery(
-      `SELECT m.*, 
-       t1.name as home_team, 
-       t1.abbrev as home_team_abbrev,
-       t2.name as away_team,
-       t2.abbrev as away_team_abbrev 
-       FROM matches m
-       JOIN teams t1 ON m.home_team_id = t1.team_id
-       JOIN teams t2 ON m.away_team_id = t2.team_id
-       WHERE m.round_number = ? AND m.year = ?
-       ORDER BY m.match_number`,
-      [round, year]
-    );
-    
-    // Process matches just to determine if they're locked - but don't format the dates
-    const processedMatches = matches.map(match => {
-      let isLocked = false;
-      
-      if (match.match_date) {
-        try {
-          // Date should be in ISO format after import
-          const matchDate = new Date(match.match_date);
-          isLocked = new Date() > matchDate;
-        } catch (error) {
-          console.error('Error parsing date:', match.match_date);
-        }
-      }
-      
-      // Return match with isLocked flag but keep the original date
-      return {
-        ...match,
-        isLocked
-      };
-    });
+    const matches = await matchService.getMatchesByRoundAndYear(round, year);
+    const processedMatches = matchService.processMatchLockStatus(matches);
     
     res.json(processedMatches);
   } catch (error) {
@@ -227,37 +139,17 @@ router.post('/save', async (req, res) => {
     
     // Check if this is a deletion request (empty string or null)
     if (probability === "" || probability === null) {
-      // Delete the prediction
-      await runQuery(
-        'DELETE FROM predictions WHERE match_id = ? AND predictor_id = ?',
-        [matchId, predictorId]
-      );
+      await predictionService.deletePrediction(matchId, predictorId);
       return res.json({ success: true, action: 'deleted' });
     }
-    
+
     // Sanitize probability value
     let prob = parseInt(probability);
     if (isNaN(prob)) prob = 50;
     if (prob < 0) prob = 0;
     if (prob > 100) prob = 100;
     
-    // Check if prediction exists
-    const existing = await getOne(
-      'SELECT * FROM predictions WHERE match_id = ? AND predictor_id = ?',
-      [matchId, predictorId]
-    );
-    
-    if (existing) {
-      await runQuery(
-        'UPDATE predictions SET home_win_probability = ? WHERE match_id = ? AND predictor_id = ?',
-        [prob, matchId, predictorId]
-      );
-    } else {
-      await runQuery(
-        'INSERT INTO predictions (match_id, predictor_id, home_win_probability) VALUES (?, ?, ?)',
-        [matchId, predictorId, prob]
-      );
-    }
+    await predictionService.savePrediction(matchId, predictorId, prob);
     
     res.json({ success: true });
   } catch (error) {

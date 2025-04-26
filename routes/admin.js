@@ -5,6 +5,10 @@ const { getQuery, getOne, runQuery } = require('../models/db');
 const { isAuthenticated, isAdmin } = require('./auth');
 const sqlite3 = require('sqlite3').verbose();
 const scoringService = require('../services/scoring-service');
+const roundService = require('../services/round-service');
+const matchService = require('../services/match-service');
+const predictionService = require('../services/prediction-service');
+const predictorService = require('../services/predictor-service');
 
 // Require authentication and admin for all admin routes
 router.use(isAuthenticated);
@@ -29,28 +33,10 @@ router.get('/', async (req, res) => {
     );
     
     // Get all predictors
-    const predictors = await getQuery(
-      'SELECT predictor_id, name, is_admin, year_joined FROM predictors ORDER BY name'
-    );
+    const predictors = await predictorService.getAllPredictors();
     
     // Get all rounds for the selected year
-    const rounds = await getQuery(
-      `SELECT DISTINCT round_number 
-       FROM matches 
-       WHERE year = ?
-       ORDER BY 
-         CASE 
-           WHEN round_number = 'OR' THEN 0 
-           WHEN round_number LIKE '%' AND CAST(round_number AS INTEGER) BETWEEN 1 AND 99 THEN CAST(round_number AS INTEGER)
-           WHEN round_number = 'Elimination Final' THEN 100
-           WHEN round_number = 'Qualifying Final' THEN 101
-           WHEN round_number = 'Semi Final' THEN 102
-           WHEN round_number = 'Preliminary Final' THEN 103
-           WHEN round_number = 'Grand Final' THEN 104
-           ELSE 999
-         END`,
-      [selectedYear]
-    );
+    const rounds = await roundService.getRoundsForYear(selectedYear);
     
     res.render('admin', {
       predictors,
@@ -78,35 +64,20 @@ router.post('/predictors', async (req, res) => {
     }
     
     // Check password length
-    if (!isStrongPassword(password)) {
-      return res.redirect('/admin?error=Password must be at least 12 characters');
+    if (password.length < predictorService.PASSWORD_MIN_LENGTH) {
+      return res.redirect(`/admin?error=Password must be at least ${predictorService.PASSWORD_MIN_LENGTH} characters`);
     }
     
     // Check if user already exists
-    const existingUser = await getOne(
-      'SELECT * FROM predictors WHERE name = ?',
-      [username]
-    );
+    const existingUser = await predictorService.getPredictorByName(username);
     
     if (existingUser) {
       return res.redirect('/admin?error=User already exists');
     }
     
-    // Hash password
-    const salt = await bcrypt.genSalt(12);
-    const hashedPassword = await bcrypt.hash(password, salt);
-    
-    // Convert isAdmin to integer (checkbox value)
-    const isAdminValue = isAdmin === 'on' ? 1 : 0;
-    
-    // Get year joined - default to current year if not provided
-    const yearJoinedValue = yearJoined ? parseInt(yearJoined) : new Date().getFullYear();
-    
-    // Insert new predictor
-    await runQuery(
-      'INSERT INTO predictors (name, password, is_admin, year_joined) VALUES (?, ?, ?, ?)',
-      [username, hashedPassword, isAdminValue, yearJoinedValue]
-    );
+    // Create new predictor
+    const isAdminValue = isAdmin === 'on';
+    await predictorService.createPredictor(username, password, isAdminValue, yearJoined);
     
     res.redirect('/admin?success=Predictor added successfully');
   } catch (error) {
@@ -131,10 +102,7 @@ router.get('/predictions/:userId', async (req, res) => {
     }
     
     // Get predictions for this user
-    const predictions = await getQuery(
-      'SELECT * FROM predictions WHERE predictor_id = ?',
-      [userId]
-    );
+    const predictions = await predictionService.getPredictionsForUser(userId);
     
     // Convert to a map format for the frontend
     const predictionsMap = {};
@@ -175,11 +143,7 @@ router.post('/predictions/:userId/save', async (req, res) => {
     
     // Check if this is a deletion request (empty string or null)
     if (probability === "" || probability === null) {
-      // Delete the prediction
-      await runQuery(
-        'DELETE FROM predictions WHERE match_id = ? AND predictor_id = ?',
-        [matchId, userId]
-      );
+      await predictionService.deletePrediction(matchId, userId);
       return res.json({ success: true, action: 'deleted' });
     }
     
@@ -189,23 +153,7 @@ router.post('/predictions/:userId/save', async (req, res) => {
     if (prob < 0) prob = 0;
     if (prob > 100) prob = 100;
     
-    // Check if prediction exists
-    const existing = await getOne(
-      'SELECT * FROM predictions WHERE match_id = ? AND predictor_id = ?',
-      [matchId, userId]
-    );
-    
-    if (existing) {
-      await runQuery(
-        'UPDATE predictions SET home_win_probability = ? WHERE match_id = ? AND predictor_id = ?',
-        [prob, matchId, userId]
-      );
-    } else {
-      await runQuery(
-        'INSERT INTO predictions (match_id, predictor_id, home_win_probability) VALUES (?, ?, ?)',
-        [matchId, userId, prob]
-      );
-    }
+    await predictionService.savePrediction(matchId, userId, prob);
     
     res.json({ success: true });
   } catch (error) {
@@ -314,29 +262,7 @@ router.get('/stats', async (req, res) => {
 router.get('/export/predictions', async (req, res) => {
   try {
     // Get all predictions with related data
-    const predictions = await getQuery(`
-      SELECT 
-        p.prediction_id,
-        p.match_id,
-        p.predictor_id,
-        p.home_win_probability,
-        p.prediction_time,
-        p.tipped_team,
-        pr.name as predictor_name,
-        m.match_number,
-        m.round_number,
-        m.match_date,
-        t1.name as home_team,
-        t2.name as away_team,
-        m.hscore,
-        m.ascore
-      FROM predictions p
-      JOIN predictors pr ON p.predictor_id = pr.predictor_id
-      JOIN matches m ON p.match_id = m.match_id
-      JOIN teams t1 ON m.home_team_id = t1.team_id
-      JOIN teams t2 ON m.away_team_id = t2.team_id
-      ORDER BY pr.name, m.match_date
-    `);
+    const predictions = await predictionService.getAllPredictionsWithDetails();
     
     // Set headers for CSV download
     res.setHeader('Content-Type', 'text/csv');
@@ -450,29 +376,19 @@ router.post('/reset-password/:userId', async (req, res) => {
     }
     
     // Check password length
-    if (!isStrongPassword(newPassword)) {
-      return res.redirect('/admin?error=Password must be at least 12 characters');
+    if (newPassword.length < predictorService.PASSWORD_MIN_LENGTH) {
+      return res.redirect(`/admin?error=Password must be at least ${predictorService.PASSWORD_MIN_LENGTH} characters`);
     }
     
     // Check if user exists
-    const user = await getOne(
-      'SELECT * FROM predictors WHERE predictor_id = ?',
-      [userId]
-    );
+    const user = await predictorService.getPredictorById(userId);
     
     if (!user) {
       return res.redirect('/admin?error=User not found');
     }
     
-    // Hash new password
-    const salt = await bcrypt.genSalt(12);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
-    
-    // Update password
-    await runQuery(
-      'UPDATE predictors SET password = ? WHERE predictor_id = ?',
-      [hashedPassword, userId]
-    );
+    // Reset password
+    await predictorService.resetPassword(userId, newPassword);
     
     res.redirect('/admin?success=Password reset successfully');
   } catch (error) {
@@ -519,33 +435,21 @@ router.post('/delete-user/:userId', async (req, res) => {
     }
     
     // Check if user exists
-    const user = await getOne(
-      'SELECT * FROM predictors WHERE predictor_id = ?',
-      [userId]
-    );
+    const user = await predictorService.getPredictorById(userId);
     
     if (!user) {
       return res.redirect('/admin?error=User not found');
     }
     
-    // Delete user's predictions first (foreign key constraint)
-    await runQuery(
-      'DELETE FROM predictions WHERE predictor_id = ?',
-      [userId]
-    );
-    
-    // Delete the user
-    await runQuery(
-      'DELETE FROM predictors WHERE predictor_id = ?',
-      [userId]
-    );
+    // Delete the user and their predictions
+    await predictorService.deletePredictor(userId);
     
     res.redirect('/admin?success=User deleted successfully');
-  } catch (error) {
-    console.error('Error deleting user:', error);
-    res.redirect('/admin?error=Failed to delete user');
-  }
-});
+      } catch (error) {
+        console.error('Error deleting user:', error);
+        res.redirect('/admin?error=Failed to delete user');
+      }
+    });
 
 // Database export route
 router.get('/export/database', async (req, res) => {

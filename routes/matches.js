@@ -3,6 +3,10 @@ const router = express.Router();
 const { getQuery, getOne, runQuery } = require('../models/db');
 const { isAuthenticated } = require('./auth');
 const scoringService = require('../services/scoring-service');
+const roundService = require('../services/round-service');
+const matchService = require('../services/match-service');
+const predictionService = require('../services/prediction-service');
+const predictorService = require('../services/predictor-service');
 
 // Require authentication for all matches routes
 router.use(isAuthenticated);
@@ -88,19 +92,7 @@ router.get('/round/:round', async (req, res) => {
     let matches;
     
     // Get matches for the specific round and year
-    matches = await getQuery(
-      `SELECT m.*, 
-       t1.name as home_team, 
-       t1.abbrev as home_team_abbrev,
-       t2.name as away_team,
-       t2.abbrev as away_team_abbrev 
-       FROM matches m
-       JOIN teams t1 ON m.home_team_id = t1.team_id
-       JOIN teams t2 ON m.away_team_id = t2.team_id
-       WHERE m.round_number = ? AND m.year = ?
-       ORDER BY m.match_number`,
-      [round, year]
-    );
+    matches = await matchService.getMatchesByRoundAndYear(round, year);
     
     res.json(matches);
   } catch (error) {
@@ -124,23 +116,7 @@ router.get('/', async (req, res) => {
     const years = await getQuery(yearQuery);
     
     // Get all rounds for the selected year
-    const rounds = await getQuery(
-      `SELECT DISTINCT round_number 
-       FROM matches 
-       WHERE year = ?
-       ORDER BY 
-         CASE 
-           WHEN round_number = 'OR' THEN 0 
-           WHEN round_number LIKE '%' AND CAST(round_number AS INTEGER) BETWEEN 1 AND 99 THEN CAST(round_number AS INTEGER)
-           WHEN round_number = 'Elimination Final' THEN 100
-           WHEN round_number = 'Qualifying Final' THEN 101
-           WHEN round_number = 'Semi Final' THEN 102
-           WHEN round_number = 'Preliminary Final' THEN 103
-           WHEN round_number = 'Grand Final' THEN 104
-           ELSE 999
-         END`,
-      [selectedYear]
-    );
+    const rounds = await roundService.getRoundsForYear(selectedYear);
     
     res.json(rounds);
   } catch (error) {
@@ -167,49 +143,20 @@ router.get('/stats', async (req, res) => {
     await ensureDefaultPredictions(selectedYear);
     
     // Get all predictors, but include admin status
-    const predictors = await getQuery(
-      'SELECT predictor_id, name, is_admin FROM predictors ORDER BY name'
-    );
+    const predictors = await predictorService.getPredictorsWithAdminStatus();
     
     // Get matches with results for the selected year
-    const completedMatches = await getQuery(`
-      SELECT m.*, 
-             t1.name as home_team, 
-             t1.abbrev as home_team_abbrev,
-             t2.name as away_team,
-             t2.abbrev as away_team_abbrev 
-      FROM matches m
-      JOIN teams t1 ON m.home_team_id = t1.team_id
-      JOIN teams t2 ON m.away_team_id = t2.team_id
-      WHERE m.hscore IS NOT NULL AND m.ascore IS NOT NULL
-      AND m.year = ?
-      ORDER BY m.match_date DESC
-      LIMIT 10
-    `, [selectedYear]);
+    const completedMatches = await matchService.getCompletedMatchesForYear(selectedYear);
     
     // Get current user's predictions for completed matches in the selected year
-    const userPredictions = await getQuery(`
-      SELECT p.*
-      FROM predictions p
-      JOIN matches m ON p.match_id = m.match_id
-      WHERE p.predictor_id = ?
-      AND m.hscore IS NOT NULL AND m.ascore IS NOT NULL
-      AND m.year = ?
-    `, [req.session.user.id, selectedYear]);
+    const userPredictions = await predictionService.getPredictionsForUser(req.session.user.id);
     
     // Calculate accuracy for each predictor with additional metrics
     const predictorStats = [];
     
     for (const predictor of predictors) {
       // Get all predictions for this predictor with results for the selected year
-      const predictionResults = await getQuery(`
-        SELECT p.*, m.hscore, m.ascore
-        FROM predictions p
-        JOIN matches m ON p.match_id = m.match_id
-        WHERE p.predictor_id = ?
-        AND m.hscore IS NOT NULL AND m.ascore IS NOT NULL
-        AND m.year = ?
-      `, [predictor.predictor_id, selectedYear]);
+      const predictionResults = await predictionService.getPredictionsWithResultsForYear(predictor.predictor_id, selectedYear);
       
       let tipPoints = 0;
       let totalBrierScore = 0;
