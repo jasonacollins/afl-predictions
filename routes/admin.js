@@ -92,10 +92,7 @@ router.get('/predictions/:userId', async (req, res) => {
     const userId = req.params.userId;
     
     // Check if user exists
-    const user = await getOne(
-      'SELECT * FROM predictors WHERE predictor_id = ?',
-      [userId]
-    );
+    const user = await predictorService.getPredictorById(userId);
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -132,10 +129,7 @@ router.post('/predictions/:userId/save', async (req, res) => {
     }
     
     // Check if user exists
-    const user = await getOne(
-      'SELECT * FROM predictors WHERE predictor_id = ?',
-      [userId]
-    );
+    const user = await predictorService.getPredictorById(userId);
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });

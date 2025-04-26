@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const router = express.Router();
 const { getOne, runQuery } = require('../models/db');
+const predictorService = require('../services/predictor-service');
 
 // Add rate limiting
 const rateLimit = require('express-rate-limit');
@@ -35,10 +36,7 @@ router.post('/login', loginLimiter, async (req, res) => {
     }
 
     // Check if user exists
-    const user = await getOne(
-      'SELECT * FROM predictors WHERE name = ?',
-      [username]
-    );
+    const user = await predictorService.getPredictorByName(username);
 
     if (!user) {
       return res.render('index', { 

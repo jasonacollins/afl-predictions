@@ -22,7 +22,7 @@ router.get('/', async (req, res) => {
     let yearQuery = 'SELECT DISTINCT year FROM matches ORDER BY year DESC';
     if (!req.session.isAdmin) {
       // Get the user's year_joined
-      const user = await getOne('SELECT year_joined FROM predictors WHERE predictor_id = ?', [req.session.user.id]);
+      const user = await predictorService.getPredictorById(req.session.user.id);
       const userYearJoined = user.year_joined || 2022;
       
       // Filter years based on when the user joined
