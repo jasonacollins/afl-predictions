@@ -1,5 +1,7 @@
+// services/scoring-service.js
 /**
  * Centralized scoring service for AFL predictions
+ * This file is designed to work in both Node.js and browser environments
  */
 
 // Calculate Brier score: lower is better (0-1 range)
@@ -54,8 +56,18 @@ function calculateTipPoints(predictedProbability, homeScore, awayScore, tippedTe
   return (homeWon && predictedProbability > 50) || (awayWon && predictedProbability < 50) ? 1 : 0;
 }
 
-module.exports = {
-  calculateBrierScore,
-  calculateBitsScore,
-  calculateTipPoints
-};
+// Export for Node.js
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    calculateBrierScore,
+    calculateBitsScore,
+    calculateTipPoints
+  };
+}
+
+// Export for browser
+if (typeof window !== 'undefined') {
+  window.calculateBrierScore = calculateBrierScore;
+  window.calculateBitsScore = calculateBitsScore;
+  window.calculateTipPoints = calculateTipPoints;
+}

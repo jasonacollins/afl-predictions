@@ -19,6 +19,11 @@ const port = 3001;
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
+// Serve the scoring service as a client-side script
+app.get('/js/scoring-service.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'services', 'scoring-service.js'));
+});
+
 // Middleware
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.urlencoded({ extended: true }));
