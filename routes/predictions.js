@@ -137,7 +137,8 @@ router.get('/', async (req, res) => {
       matches,
       predictions: predictionsMap,
       calculateTipPoints: scoringService.calculateTipPoints,
-      calculateBrierScore: scoringService.calculateBrierScore
+      calculateBrierScore: scoringService.calculateBrierScore,
+      calculateBitsScore: scoringService.calculateBitsScore
     });
   } catch (error) {
     console.error('Error loading predictions page:', error);
