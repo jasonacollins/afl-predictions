@@ -1,0 +1,3 @@
+# Example production .env file
+SESSION_SECRET=redacted
+NODE_ENV=production

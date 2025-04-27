@@ -172,7 +172,7 @@ function renderMatches(matches) {
               ${buttonText}
             </button>
           </div>
-        ` : isLocked && !hasResult ? `
+        ` : isLocked ? `
           <div class="prediction-locked">
             ${hasPrediction ? `
               <p>Your prediction: ${prediction}% for ${(match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team}</p>
@@ -183,19 +183,13 @@ function renderMatches(matches) {
             ` : `
               <p>No prediction made</p>
             `}
-            <p class="locked-message">Match has started - predictions locked</p>
-          </div>
-        ` : hasResult ? `
-          <div class="prediction-result">
-            ${hasPrediction ? `
-              <p>Your prediction: ${prediction}% for ${(match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team}</p>
-              ${parseInt(prediction) === 50 ? `
-                <p>Tipped: ${tippedTeam === 'home' ? ((match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team) : ((match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team)} to win</p>
-              ` : ''}
-              ${calculateAccuracy(match, prediction, tippedTeam)}
-            ` : `
-              <p>No prediction made</p>
-            `}
+            ${!hasResult ? `<p class="locked-message">Match has started - predictions locked</p>` : ''}
+            ${hasResult ? `
+              <div class="match-result">
+                <span class="score">${match.hscore} - ${match.ascore}</span>
+              </div>
+              ${hasPrediction ? calculateAccuracy(match, prediction, tippedTeam) : ''}
+            ` : ''}
           </div>
         ` : ''}
       </div>

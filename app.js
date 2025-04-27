@@ -11,6 +11,10 @@ const predictionsRoutes = require('./routes/predictions');
 const matchesRoutes = require('./routes/matches');
 const adminRoutes = require('./routes/admin');
 
+// Import utilities
+const { errorMiddleware } = require('./utils/error-handler');
+const { logger, requestLogger } = require('./utils/logger');
+
 // Initialize express app
 const app = express();
 const port = 3001;
@@ -52,6 +56,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// Add request logging middleware (before routes)
+app.use(requestLogger);
+
 // Routes
 app.use('/', authRoutes);
 app.use('/predictions', predictionsRoutes);
@@ -67,17 +74,10 @@ app.get('/', (req, res) => {
   }
 });
 
-// Error handler
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).render('error', { 
-    error: process.env.NODE_ENV === 'production' 
-      ? 'An unexpected error occurred' 
-      : err.message
-  });
-});
+// Add global error handler (after routes)
+app.use(errorMiddleware);
 
 // Start server
 app.listen(port, '0.0.0.0', () => {
-  console.log(`Server running on http://0.0.0.0:${port}`);
+  logger.info(`Server running on http://0.0.0.0:${port}`);
 });
