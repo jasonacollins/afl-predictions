@@ -1,5 +1,7 @@
 // services/round-service.js
 const { getQuery } = require('../models/db');
+const { AppError } = require('../utils/error-handler');
+const { logger } = require('../utils/logger');
 
 // Define round order constants
 const ROUND_ORDER = {
@@ -30,13 +32,27 @@ const ROUND_ORDER_SQL = `
 
 // Get all rounds for a specific year
 async function getRoundsForYear(year) {
-  return await getQuery(
-    `SELECT DISTINCT round_number 
-     FROM matches 
-     WHERE year = ?
-     ORDER BY ${ROUND_ORDER_SQL}`,
-    [year]
-  );
+  try {
+    logger.debug(`Fetching rounds for year: ${year}`);
+    
+    const rounds = await getQuery(
+      `SELECT DISTINCT round_number 
+       FROM matches 
+       WHERE year = ?
+       ORDER BY ${ROUND_ORDER_SQL}`,
+      [year]
+    );
+    
+    logger.info(`Retrieved ${rounds.length} rounds for year ${year}`);
+    
+    return rounds;
+  } catch (error) {
+    logger.error('Error fetching rounds for year', { 
+      year,
+      error: error.message 
+    });
+    throw new AppError('Failed to fetch rounds', 500, 'DATABASE_ERROR');
+  }
 }
 
 // Get round display name

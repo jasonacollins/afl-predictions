@@ -1,76 +1,218 @@
 // services/predictor-service.js
 const { getQuery, getOne, runQuery } = require('../models/db');
 const bcrypt = require('bcrypt');
+const { AppError, createNotFoundError, createValidationError } = require('../utils/error-handler');
+const { logger } = require('../utils/logger');
 
 const PASSWORD_MIN_LENGTH = 12;
 
 // Get all predictors
 async function getAllPredictors() {
-  return await getQuery(
-    'SELECT predictor_id, name, is_admin, year_joined FROM predictors ORDER BY name'
-  );
+  try {
+    logger.debug('Fetching all predictors');
+    
+    const predictors = await getQuery(
+      'SELECT predictor_id, name, is_admin, year_joined FROM predictors ORDER BY name'
+    );
+    
+    logger.info(`Retrieved ${predictors.length} predictors`);
+    
+    return predictors;
+  } catch (error) {
+    logger.error('Error fetching all predictors', { error: error.message });
+    throw new AppError('Failed to fetch predictors', 500, 'DATABASE_ERROR');
+  }
 }
 
 // Get predictor by ID
 async function getPredictorById(predictorId) {
-  return await getOne(
-    'SELECT * FROM predictors WHERE predictor_id = ?',
-    [predictorId]
-  );
+  try {
+    logger.debug(`Fetching predictor by ID: ${predictorId}`);
+    
+    const predictor = await getOne(
+      'SELECT * FROM predictors WHERE predictor_id = ?',
+      [predictorId]
+    );
+    
+    if (!predictor) {
+      logger.warn(`Predictor not found with ID: ${predictorId}`);
+    }
+    
+    return predictor;
+  } catch (error) {
+    logger.error('Error fetching predictor by ID', { 
+      predictorId,
+      error: error.message 
+    });
+    throw new AppError('Failed to fetch predictor', 500, 'DATABASE_ERROR');
+  }
 }
 
 // Get predictor by name
 async function getPredictorByName(name) {
-  return await getOne(
-    'SELECT * FROM predictors WHERE name = ?',
-    [name]
-  );
+  try {
+    logger.debug(`Fetching predictor by name: ${name}`);
+    
+    const predictor = await getOne(
+      'SELECT * FROM predictors WHERE name = ?',
+      [name]
+    );
+    
+    if (!predictor) {
+      logger.debug(`Predictor not found with name: ${name}`);
+    }
+    
+    return predictor;
+  } catch (error) {
+    logger.error('Error fetching predictor by name', { 
+      name,
+      error: error.message 
+    });
+    throw new AppError('Failed to fetch predictor', 500, 'DATABASE_ERROR');
+  }
 }
 
 // Create new predictor
 async function createPredictor(username, password, isAdmin, yearJoined) {
-  const salt = await bcrypt.genSalt(12);
-  const hashedPassword = await bcrypt.hash(password, salt);
-  
-  const isAdminValue = isAdmin ? 1 : 0;
-  const yearJoinedValue = yearJoined || new Date().getFullYear();
-  
-  await runQuery(
-    'INSERT INTO predictors (name, password, is_admin, year_joined) VALUES (?, ?, ?, ?)',
-    [username, hashedPassword, isAdminValue, yearJoinedValue]
-  );
+  try {
+    // Validate inputs
+    if (!username || !password) {
+      throw createValidationError('Username and password are required');
+    }
+    
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      throw createValidationError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
+    }
+    
+    logger.info(`Creating new predictor: ${username}`);
+    
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    
+    const isAdminValue = isAdmin ? 1 : 0;
+    const yearJoinedValue = yearJoined || new Date().getFullYear();
+    
+    await runQuery(
+      'INSERT INTO predictors (name, password, is_admin, year_joined) VALUES (?, ?, ?, ?)',
+      [username, hashedPassword, isAdminValue, yearJoinedValue]
+    );
+    
+    logger.info(`Successfully created predictor: ${username} (admin: ${isAdminValue}, year: ${yearJoinedValue})`);
+  } catch (error) {
+    if (error.isOperational) {
+      throw error; // Re-throw validation errors
+    }
+    
+    logger.error('Error creating predictor', { 
+      username,
+      isAdmin,
+      yearJoined,
+      error: error.message 
+    });
+    
+    // Check if it's a unique constraint violation
+    if (error.message.includes('UNIQUE')) {
+      throw createValidationError('Username already exists');
+    }
+    
+    throw new AppError('Failed to create predictor', 500, 'DATABASE_ERROR');
+  }
 }
 
 // Reset password
 async function resetPassword(predictorId, newPassword) {
-  const salt = await bcrypt.genSalt(12);
-  const hashedPassword = await bcrypt.hash(newPassword, salt);
-  
-  await runQuery(
-    'UPDATE predictors SET password = ? WHERE predictor_id = ?',
-    [hashedPassword, predictorId]
-  );
+  try {
+    // Validate input
+    if (!newPassword) {
+      throw createValidationError('New password is required');
+    }
+    
+    if (newPassword.length < PASSWORD_MIN_LENGTH) {
+      throw createValidationError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
+    }
+    
+    logger.info(`Resetting password for predictor ID: ${predictorId}`);
+    
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    
+    const result = await runQuery(
+      'UPDATE predictors SET password = ? WHERE predictor_id = ?',
+      [hashedPassword, predictorId]
+    );
+    
+    if (result.changes === 0) {
+      logger.warn(`No predictor found with ID: ${predictorId} for password reset`);
+      throw createNotFoundError('Predictor');
+    }
+    
+    logger.info(`Successfully reset password for predictor ID: ${predictorId}`);
+  } catch (error) {
+    if (error.isOperational) {
+      throw error; // Re-throw validation/not found errors
+    }
+    
+    logger.error('Error resetting password', { 
+      predictorId,
+      error: error.message 
+    });
+    throw new AppError('Failed to reset password', 500, 'DATABASE_ERROR');
+  }
 }
 
 // Delete predictor
 async function deletePredictor(predictorId) {
-  // Delete predictions first (foreign key constraint)
-  await runQuery(
-    'DELETE FROM predictions WHERE predictor_id = ?',
-    [predictorId]
-  );
-  
-  // Delete the predictor
-  await runQuery(
-    'DELETE FROM predictors WHERE predictor_id = ?',
-    [predictorId]
-  );
+  try {
+    logger.info(`Deleting predictor ID: ${predictorId}`);
+    
+    // Delete predictions first (foreign key constraint)
+    const predResult = await runQuery(
+      'DELETE FROM predictions WHERE predictor_id = ?',
+      [predictorId]
+    );
+    
+    logger.info(`Deleted ${predResult.changes} predictions for predictor ID: ${predictorId}`);
+    
+    // Delete the predictor
+    const predictorResult = await runQuery(
+      'DELETE FROM predictors WHERE predictor_id = ?',
+      [predictorId]
+    );
+    
+    if (predictorResult.changes === 0) {
+      logger.warn(`No predictor found with ID: ${predictorId} for deletion`);
+      throw createNotFoundError('Predictor');
+    }
+    
+    logger.info(`Successfully deleted predictor ID: ${predictorId}`);
+  } catch (error) {
+    if (error.isOperational) {
+      throw error; // Re-throw not found errors
+    }
+    
+    logger.error('Error deleting predictor', { 
+      predictorId,
+      error: error.message 
+    });
+    throw new AppError('Failed to delete predictor', 500, 'DATABASE_ERROR');
+  }
 }
 
 async function getPredictorsWithAdminStatus() {
-  return await getQuery(
-    'SELECT predictor_id, name, is_admin FROM predictors ORDER BY name'
-  );
+  try {
+    logger.debug('Fetching predictors with admin status');
+    
+    const predictors = await getQuery(
+      'SELECT predictor_id, name, is_admin FROM predictors ORDER BY name'
+    );
+    
+    logger.info(`Retrieved ${predictors.length} predictors with admin status`);
+    
+    return predictors;
+  } catch (error) {
+    logger.error('Error fetching predictors with admin status', { error: error.message });
+    throw new AppError('Failed to fetch predictors', 500, 'DATABASE_ERROR');
+  }
 }
 
 module.exports = {

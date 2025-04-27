@@ -28,6 +28,9 @@ const fileFormat = winston.format.combine(
   winston.format.json()
 );
 
+// Use winston-daily-rotate-file to handle log rotation
+require('winston-daily-rotate-file');
+
 // Create the logger
 const logger = winston.createLogger({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
@@ -36,16 +39,24 @@ const logger = winston.createLogger({
     new winston.transports.Console({
       format: consoleFormat
     }),
-    // Error log file
-    new winston.transports.File({
-      filename: path.join(logDir, 'error.log'),
+    // Rotating error log file
+    new winston.transports.DailyRotateFile({
+      filename: path.join(logDir, 'error-%DATE%.log'),
+      datePattern: 'YYYY-MM-DD',
       level: 'error',
-      format: fileFormat
+      format: fileFormat,
+      maxSize: '20m',
+      maxFiles: '7d',
+      zippedArchive: true
     }),
-    // Combined log file
-    new winston.transports.File({
-      filename: path.join(logDir, 'combined.log'),
-      format: fileFormat
+    // Rotating combined log file
+    new winston.transports.DailyRotateFile({
+      filename: path.join(logDir, 'combined-%DATE%.log'),
+      datePattern: 'YYYY-MM-DD',
+      format: fileFormat,
+      maxSize: '20m',
+      maxFiles: '14d',
+      zippedArchive: true
     })
   ],
   exitOnError: false

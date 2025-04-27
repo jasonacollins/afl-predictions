@@ -1,18 +1,35 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const bcrypt = require('bcrypt');
+const { logger } = require('../utils/logger');
 
 // Database path
 const dbPath = process.env.DB_PATH || path.join(__dirname, '../data/afl_predictions.db');
-const db = new sqlite3.Database(dbPath);
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) {
+    logger.error('Error connecting to database', { error: err.message, path: dbPath });
+  } else {
+    logger.info('Connected to SQLite database', { path: dbPath });
+  }
+});
 
 // Helper to run queries with promises
 function runQuery(query, params = []) {
   return new Promise((resolve, reject) => {
     db.run(query, params, function(err) {
       if (err) {
+        logger.error('Database query error', { 
+          query, 
+          params, 
+          error: err.message 
+        });
         reject(err);
       } else {
+        logger.debug('Query executed successfully', { 
+          query, 
+          changes: this.changes,
+          lastID: this.lastID
+        });
         resolve(this);
       }
     });
@@ -24,8 +41,17 @@ function getQuery(query, params = []) {
   return new Promise((resolve, reject) => {
     db.all(query, params, (err, rows) => {
       if (err) {
+        logger.error('Database query error', { 
+          query, 
+          params, 
+          error: err.message 
+        });
         reject(err);
       } else {
+        logger.debug('Query returned results', { 
+          query, 
+          rowCount: rows.length 
+        });
         resolve(rows);
       }
     });
@@ -37,8 +63,17 @@ function getOne(query, params = []) {
   return new Promise((resolve, reject) => {
     db.get(query, params, (err, row) => {
       if (err) {
+        logger.error('Database query error', { 
+          query, 
+          params, 
+          error: err.message 
+        });
         reject(err);
       } else {
+        logger.debug('Query returned single row', { 
+          query, 
+          found: !!row 
+        });
         resolve(row);
       }
     });
@@ -48,13 +83,15 @@ function getOne(query, params = []) {
 // Initialize database if needed
 async function initializeDatabase() {
   try {
+    logger.info('Checking database schema');
+    
     // Check if schema exists
     const tableExists = await getOne(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='predictors'"
     );
 
     if (!tableExists) {
-      console.log('Creating database schema...');
+      logger.info('Creating database schema');
       
       // Create tables
       await runQuery(`
@@ -81,16 +118,17 @@ async function initializeDatabase() {
           agoals INTEGER,
           abehinds INTEGER,
           year INTEGER DEFAULT 2025,
-          complete INTEGER, /* Added complete column */
+          complete INTEGER,
           FOREIGN KEY (home_team_id) REFERENCES teams (team_id),
           FOREIGN KEY (away_team_id) REFERENCES teams (team_id)
         )
       `);
       
-      // Rest of the function...
+      // Rest of the table creation...
+      logger.info('Database schema created successfully');
     } else {
       // Check for missing columns and add them if needed
-      console.log('Checking for schema updates...');
+      logger.info('Checking for schema updates');
       
       // Check if 'year' column exists in matches table
       const yearColumnExists = await getOne(
@@ -98,7 +136,7 @@ async function initializeDatabase() {
       );
       
       if (!yearColumnExists) {
-        console.log('Adding year column to matches table');
+        logger.info('Adding year column to matches table');
         await runQuery("ALTER TABLE matches ADD COLUMN year INTEGER DEFAULT 2025");
       }
       
@@ -108,12 +146,15 @@ async function initializeDatabase() {
       );
       
       if (!completeColumnExists) {
-        console.log('Adding complete column to matches table');
+        logger.info('Adding complete column to matches table');
         await runQuery("ALTER TABLE matches ADD COLUMN complete INTEGER");
       }
+      
+      logger.info('Schema update check completed');
     }
-  } catch (err) {
-    console.error('Error initializing database:', err);
+  } catch (error) {
+    logger.error('Error initializing database', { error: error.message });
+    throw error;
   }
 }
 
@@ -123,4 +164,5 @@ module.exports = {
   getOne,
   initializeDatabase,
   db,
+  dbPath
 };
