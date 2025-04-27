@@ -176,7 +176,6 @@ function renderMatches(matches) {
           <div class="prediction-locked">
             ${hasPrediction ? `
               <p>Your prediction: ${prediction}% for ${(match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team}</p>
-              <p>${awayPrediction}% for ${(match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team}</p>
               ${parseInt(prediction) === 50 ? `
                 <p>Tipped: ${tippedTeam === 'home' ? ((match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team) : ((match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team)} to win</p>
               ` : ''}
@@ -185,9 +184,6 @@ function renderMatches(matches) {
             `}
             ${!hasResult ? `<p class="locked-message">Match has started - predictions locked</p>` : ''}
             ${hasResult ? `
-              <div class="match-result">
-                <span class="score">${match.hscore} - ${match.ascore}</span>
-              </div>
               ${hasPrediction ? calculateAccuracy(match, prediction, tippedTeam) : ''}
             ` : ''}
           </div>

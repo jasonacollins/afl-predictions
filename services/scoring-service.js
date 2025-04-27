@@ -2,6 +2,8 @@
 /**
  * Centralized scoring service for AFL predictions
  * This file is designed to work in both Node.js and browser environments
+ * IMPORTANT: This file is served to clients via /js/scoring-service.js
+ * Do not add any sensitive server-side code to this file
  */
 
 // Calculate Brier score: lower is better (0-1 range)
