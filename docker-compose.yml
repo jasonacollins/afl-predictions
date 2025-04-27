@@ -9,7 +9,5 @@ services:
       - TZ=Australia/Sydney
     volumes:
       - ./data:/app/data
-      - ./logs:/var/log
-      - ./app-logs:/app/logs  # Mount point for Winston logs
+      - ./logs:/app/logs
     restart: unless-stopped
-

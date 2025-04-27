@@ -14,11 +14,11 @@ COPY . .
 
 # Create data directory for SQLite and logs directory
 RUN mkdir -p data data/temp data/backups
-# Create app logs directory in addition to existing logs
-RUN mkdir -p /var/log logs && touch /var/log/afl-sync.log
+# Create logs directory
+RUN mkdir -p logs && touch logs/afl-sync.log
 
 # Set proper permissions for logs
-RUN chmod 777 /var/log/afl-sync.log
+RUN chmod 777 logs/afl-sync.log
 RUN chmod 777 logs
 
 # Add crontab file
