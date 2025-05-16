@@ -500,6 +500,140 @@ def update_ratings_with_results(db_path, model_path='afl_elo_model.json', save_u
     # Return the updated predictor
     return predictor
 
+def analyze_prediction_accuracy(predictions_df, completed_matches, output_prefix="elo"):
+    """
+    Analyze the accuracy of ELO predictions
+    
+    Parameters:
+    -----------
+    predictions_df: pandas DataFrame
+        DataFrame containing predictions
+    completed_matches: pandas DataFrame
+        DataFrame containing completed matches with results
+    output_prefix: str
+        Prefix for output files
+        
+    Returns:
+    --------
+    dict with accuracy metrics
+    """
+    print("\nAnalyzing prediction accuracy...")
+    
+    if len(predictions_df) == 0 or len(completed_matches) == 0:
+        print("No predictions or completed matches to analyze")
+        return {}
+    
+    # Merge predictions with actual results
+    analysis_df = predictions_df.copy()
+    
+    # Add columns for result analysis
+    analysis_df['actual_result'] = None
+    analysis_df['correct_prediction'] = False
+    analysis_df['brier_score'] = None
+    analysis_df['bits_score'] = None
+    
+    # Process each prediction
+    for idx, pred in analysis_df.iterrows():
+        match_id = pred['match_id']
+        match = completed_matches[completed_matches['match_id'] == match_id]
+        
+        if len(match) == 0 or pd.isna(match['hscore'].values[0]) or pd.isna(match['ascore'].values[0]):
+            continue
+        
+        # Get scores
+        hscore = match['hscore'].values[0]
+        ascore = match['ascore'].values[0]
+        
+        # Determine actual result
+        if hscore > ascore:
+            actual_result = 'home_win'
+            actual_probability = 1.0
+        elif hscore < ascore:
+            actual_result = 'away_win'
+            actual_probability = 0.0
+        else:
+            actual_result = 'draw'
+            actual_probability = 0.5
+        
+        analysis_df.at[idx, 'actual_result'] = actual_result
+        
+        # Extract probability from percentage string
+        home_win_prob_str = pred['home_win_probability']
+        try:
+            if isinstance(home_win_prob_str, str) and '%' in home_win_prob_str:
+                home_win_prob = float(home_win_prob_str.strip('%')) / 100
+            else:
+                home_win_prob = float(home_win_prob_str)
+        except:
+            print(f"Warning: Could not convert probability {home_win_prob_str} for match {match_id}")
+            continue
+        
+        # Check if prediction was correct
+        predicted_winner = pred['predicted_winner']
+        analysis_df.at[idx, 'correct_prediction'] = (predicted_winner == actual_result)
+        
+        # Calculate Brier score
+        brier = (home_win_prob - actual_probability) ** 2
+        analysis_df.at[idx, 'brier_score'] = brier
+        
+        # Calculate Bits score
+        p = max(min(home_win_prob, 0.999), 0.001)
+        if actual_probability == 1.0:
+            bits = np.log2(p)
+        elif actual_probability == 0.0:
+            bits = np.log2(1 - p)
+        else:  # Draw
+            bits = np.log2(1 - abs(0.5 - p))
+        analysis_df.at[idx, 'bits_score'] = bits
+    
+    # Filter to only completed matches
+    completed_analysis = analysis_df[analysis_df['actual_result'].notna()].copy()
+    
+    if len(completed_analysis) == 0:
+        print("No completed matches with predictions to analyze")
+        return {}
+    
+    # Group by round and calculate metrics
+    if 'round_number' in completed_analysis.columns:
+        round_stats = completed_analysis.groupby('round_number').agg(
+            matches=('match_id', 'count'),
+            accuracy=('correct_prediction', 'mean'),
+            avg_brier=('brier_score', 'mean'),
+            avg_bits=('bits_score', 'mean')
+        ).reset_index()
+        
+        # Print results by round
+        print("\nPrediction Accuracy by Round:")
+        for _, row in round_stats.iterrows():
+            print(f"Round {row['round_number']}: "
+                f"Accuracy = {row['accuracy']:.1%}, "
+                f"Brier = {row['avg_brier']:.4f}, "
+                f"Bits = {row['avg_bits']:.4f} "
+                f"({row['matches']} matches)")
+    
+    # Calculate overall metrics
+    overall_accuracy = completed_analysis['correct_prediction'].mean()
+    overall_brier = completed_analysis['brier_score'].mean()
+    overall_bits = completed_analysis['bits_score'].mean()
+    total_matches = len(completed_analysis)
+    
+    print(f"\nOverall Metrics ({total_matches} matches):")
+    print(f"Accuracy: {overall_accuracy:.1%}")
+    print(f"Brier Score: {overall_brier:.4f} (lower is better)")
+    print(f"Bits Score: {overall_bits:.4f} (higher is better)")
+    
+    # Save detailed results to CSV
+    output_file = f'{output_prefix}_prediction_analysis.csv'
+    completed_analysis.to_csv(output_file, index=False)
+    print(f"\nDetailed prediction analysis saved to {output_file}")
+    
+    return {
+        'accuracy': overall_accuracy,
+        'brier_score': overall_brier,
+        'bits_score': overall_bits,
+        'total_matches': total_matches,
+        'round_stats': round_stats if 'round_number' in completed_analysis.columns else None
+    }
 
 def main():
     """Main function to run predictions"""
@@ -507,7 +641,7 @@ def main():
     print("========================")
     
     # Set database path - UPDATED TO MATCH YOUR DATABASE NAME
-    db_path = 'data/afl-predictions.db'
+    db_path = '../data/afl_predictions.db'
     model_path = 'afl_elo_model.json'
     
     # Check if files exist
@@ -530,25 +664,119 @@ def main():
     
     if len(predictions) == 0:
         print("No upcoming matches to predict")
+    else:
+        # Display predictions
+        print("\nPredictions for upcoming matches:")
+        pd.set_option('display.max_columns', None)
+        pd.set_option('display.width', 120)
+        print(predictions[['round_number', 'match_date', 'home_team', 'away_team', 
+                          'home_win_probability', 'away_win_probability', 
+                          'predicted_winner', 'confidence']].to_string(index=False))
+        
+        # Save predictions to database
+        print("\nSaving predictions to database...")
+        save_predictions_to_database(predictions, db_path)
+        
+        # Create prediction output as CSV
+        output_file = 'elo_predictions.csv'
+        predictions.to_csv(output_file, index=False)
+        print(f"Predictions saved to {output_file}")
+    
+    # Now predict completed 2025 matches using the current model
+    print("\nPredicting and analyzing completed 2025 matches...")
+    conn = sqlite3.connect(db_path)
+    
+    # Get completed matches for 2025
+    completed_matches_query = """
+    SELECT 
+        m.match_id, m.round_number, m.match_date, 
+        ht.name as home_team, at.name as away_team,
+        m.hscore, m.ascore, m.year, m.venue
+    FROM 
+        matches m
+    JOIN 
+        teams ht ON m.home_team_id = ht.team_id
+    JOIN 
+        teams at ON m.away_team_id = at.team_id
+    WHERE 
+        m.year = 2025
+        AND m.hscore IS NOT NULL 
+        AND m.ascore IS NOT NULL
+    ORDER BY 
+        m.match_date
+    """
+    
+    completed_matches = pd.read_sql_query(completed_matches_query, conn)
+    conn.close()
+    
+    if len(completed_matches) == 0:
+        print("No completed 2025 matches found")
         return
     
-    # Display predictions
-    print("\nPredictions for upcoming matches:")
+    print(f"Found {len(completed_matches)} completed matches for 2025")
+    
+    # Load the predictor
+    predictor = AFLEloPredictor(model_path)
+    
+    # Make predictions for each completed match
+    completed_predictions = []
+    
+    for _, match in completed_matches.iterrows():
+        prediction = predictor.predict_match(
+            home_team=match['home_team'],
+            away_team=match['away_team'],
+            include_ratings=True
+        )
+        
+        # Add match details
+        prediction['match_id'] = match['match_id']
+        prediction['round_number'] = match['round_number']
+        prediction['match_date'] = match['match_date']
+        prediction['venue'] = match['venue']
+        prediction['year'] = match['year']
+        prediction['hscore'] = match['hscore']
+        prediction['ascore'] = match['ascore']
+        
+        # Determine actual result
+        if match['hscore'] > match['ascore']:
+            prediction['actual_result'] = 'home_win'
+            prediction['actual_probability'] = 1.0
+        elif match['hscore'] < match['ascore']:
+            prediction['actual_result'] = 'away_win'
+            prediction['actual_probability'] = 0.0
+        else:
+            prediction['actual_result'] = 'draw'
+            prediction['actual_probability'] = 0.5
+        
+        # Check if prediction was correct
+        prediction['correct'] = prediction['predicted_winner'] == prediction['actual_result']
+        
+        # Format the display
+        prediction['result'] = f"{int(match['hscore'])}-{int(match['ascore'])}"
+        
+        completed_predictions.append(prediction)
+    
+    # Convert to DataFrame
+    completed_df = pd.DataFrame(completed_predictions)
+    
+    # Calculate overall accuracy
+    accuracy = completed_df['correct'].mean() if len(completed_df) > 0 else 0
+    
+    # Display results
+    print("\nPredictions for Completed 2025 Matches:")
     pd.set_option('display.max_columns', None)
     pd.set_option('display.width', 120)
-    print(predictions[['round_number', 'match_date', 'home_team', 'away_team', 
-                       'home_win_probability', 'away_win_probability', 
-                       'predicted_winner', 'confidence']].to_string(index=False))
+    display_cols = ['round_number', 'match_date', 'home_team', 'away_team', 
+                    'result', 'home_win_probability', 'predicted_winner', 
+                    'actual_result', 'correct']
+    print(completed_df[display_cols].to_string(index=False))
     
-    # Save predictions to database
-    print("\nSaving predictions to database...")
-    save_predictions_to_database(predictions, db_path)
+    print(f"\nOverall accuracy: {accuracy:.1%}")
     
-    # Create prediction output as CSV
-    output_file = 'elo_predictions.csv'
-    predictions.to_csv(output_file, index=False)
-    print(f"Predictions saved to {output_file}")
-
+    # Save to CSV
+    output_file = 'elo_completed_predictions_2025.csv'
+    completed_df.to_csv(output_file, index=False)
+    print(f"Completed match predictions saved to {output_file}")
 
 if __name__ == "__main__":
     main()

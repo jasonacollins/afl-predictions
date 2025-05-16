@@ -1,0 +1,31 @@
+{
+    "parameters": {
+        "base_rating": 1500,
+        "k_factor": 20,
+        "home_advantage": 50,
+        "margin_factor": 0.3,
+        "season_carryover": 0.6,
+        "max_margin": 120
+    },
+    "team_ratings": {
+        "Carlton": 1522.1196415516595,
+        "Essendon": 1487.6850947600356,
+        "Geelong": 1556.2759325872155,
+        "North Melbourne": 1327.122731792274,
+        "Brisbane Lions": 1609.690526815494,
+        "West Coast": 1323.3505285523945,
+        "Western Bulldogs": 1575.5897446283914,
+        "Richmond": 1381.9506169147503,
+        "Melbourne": 1525.6447673123039,
+        "St Kilda": 1490.7418035827125,
+        "Fitzroy": 1499.9998825332025,
+        "Sydney": 1570.5190354150823,
+        "Hawthorn": 1558.8952880797694,
+        "Collingwood": 1561.1207801121236,
+        "Adelaide": 1520.6218231298444,
+        "Fremantle": 1470.726563834325,
+        "Port Adelaide": 1508.6519312662479,
+        "Gold Coast": 1492.1775923872813,
+        "Greater Western Sydney": 1517.1157147448926
+    }
+}

@@ -168,12 +168,29 @@ class AFLEloModel:
         accuracy = sum(1 for true, pred in zip(y_true, binary_predictions) if true == pred) / len(y_true)
         
         # Calculate Brier score (lower is better)
-        brier = brier_score_loss(y_true, y_pred)
-        
+        brier = 0
+        for true, pred in zip(y_true, y_pred):
+            # Brier score is (forecast - outcome)^2
+            brier += (pred/100 - true)**2
+        brier /= len(y_true)
+
         # Calculate log loss (lower is better)
-        # Clip predictions to avoid log(0) issues
-        y_pred_clipped = [max(min(p, 0.999), 0.001) for p in y_pred]
-        logloss = log_loss(y_true, y_pred_clipped)
+        logloss = 0
+        for true, pred in zip(y_true, y_pred):
+            # Convert percentage to probability (0-1)
+            p = max(min(pred/100, 0.999), 0.001)  # Clip to avoid log(0) issues
+            
+            # Calculate loss based on actual outcome
+            if true == 1.0:
+                loss = -np.log(p)
+            elif true == 0.0:
+                loss = -np.log(1 - p)
+            else:  # Draw (0.5)
+                # For a draw, use proximity to 0.5 for the loss calculation
+                loss = -np.log(1 - abs(0.5 - p))
+            
+            logloss += loss
+        logloss /= len(y_true)
         
         return {
             'accuracy': accuracy,
@@ -406,7 +423,23 @@ def parameter_tuning(data, param_grid, cv=5):
             test_probs = [max(min(p, 0.999), 0.001) for p in test_probs]
             
             # Calculate log loss for this fold
-            fold_loss = log_loss(test_results, test_probs)
+            log_losses = []
+            for true_val, pred_val in zip(test_results, test_probs):
+                # Clip predicted probability to avoid log(0)
+                pred_val = max(min(pred_val, 0.999), 0.001)
+                
+                # Calculate loss based on actual outcome
+                if true_val == 1.0:
+                    loss = -np.log(pred_val)
+                elif true_val == 0.0:
+                    loss = -np.log(1 - pred_val)
+                else:  # Draw (0.5)
+                    # For a draw, use proximity to 0.5 for the loss calculation
+                    loss = -np.log(1 - abs(0.5 - pred_val))
+                
+                log_losses.append(loss)
+
+            fold_loss = np.mean(log_losses)
             cv_scores.append(fold_loss)
         
         # Average score across CV folds
