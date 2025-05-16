@@ -105,7 +105,7 @@ class AFLEloPredictor:
         return prediction
 
 
-def fetch_matches_without_predictions(db_path):
+def fetch_matches_without_predictions(db_path, force_update=False):
     """
     Fetch AFL matches without predictions from the database
     
@@ -113,6 +113,8 @@ def fetch_matches_without_predictions(db_path):
     -----------
     db_path: str
         Path to SQLite database
+    force_update: bool
+        If True, fetch all matches even if they already have predictions
         
     Returns:
     --------
@@ -145,28 +147,57 @@ def fetch_matches_without_predictions(db_path):
         """)
         conn.commit()
     
-    # Now fetch matches without predictions
-    query = """
-    SELECT 
-        m.match_id, m.match_number, m.round_number, m.match_date, 
-        m.venue, m.year, m.hscore, m.ascore,
-        ht.name as home_team, at.name as away_team
-    FROM 
-        matches m
-    JOIN 
-        teams ht ON m.home_team_id = ht.team_id
-    JOIN 
-        teams at ON m.away_team_id = at.team_id
-    WHERE 
-        m.match_id NOT IN (SELECT match_id FROM elo_predictions)
-    ORDER BY 
-        m.year, m.match_date
-    """
+    # Get the current year
+    current_year_query = "SELECT MAX(year) FROM matches"
+    cursor.execute(current_year_query)
+    current_year_result = cursor.fetchone()
+    current_year = current_year_result[0] if current_year_result and current_year_result[0] else datetime.now().year
     
-    df = pd.read_sql_query(query, conn)
+    # Define the query based on force_update parameter
+    if force_update:
+        # Fetch all matches
+        query = """
+        SELECT 
+            m.match_id, m.match_number, m.round_number, m.match_date, 
+            m.venue, m.year, m.hscore, m.ascore,
+            ht.name as home_team, at.name as away_team
+        FROM 
+            matches m
+        JOIN 
+            teams ht ON m.home_team_id = ht.team_id
+        JOIN 
+            teams at ON m.away_team_id = at.team_id
+        ORDER BY 
+            m.year, m.match_date
+        """
+    else:
+        # Only fetch matches from the current year that don't have predictions
+        # or matches from any year without predictions
+        query = """
+        SELECT 
+            m.match_id, m.match_number, m.round_number, m.match_date, 
+            m.venue, m.year, m.hscore, m.ascore,
+            ht.name as home_team, at.name as away_team
+        FROM 
+            matches m
+        JOIN 
+            teams ht ON m.home_team_id = ht.team_id
+        JOIN 
+            teams at ON m.away_team_id = at.team_id
+        WHERE 
+            (m.year = ? OR m.match_id NOT IN (SELECT match_id FROM elo_predictions))
+        ORDER BY 
+            m.year, m.match_date
+        """
+    
+    # Execute the query with parameters if needed
+    if force_update:
+        df = pd.read_sql_query(query, conn)
+    else:
+        df = pd.read_sql_query(query, conn, params=(current_year,))
     
     # Print some debugging information
-    print(f"Found {len(df)} matches without predictions")
+    print(f"Found {len(df)} matches to process")
     if len(df) > 0:
         min_year = df['year'].min()
         max_year = df['year'].max()
@@ -182,7 +213,7 @@ def fetch_matches_without_predictions(db_path):
     return df
 
 
-def predict_matches_without_predictions(db_path, model_path='afl_elo_model.json'):
+def predict_matches_without_predictions(db_path, model_path='afl_elo_model.json', force_update=False):
     """
     Make predictions for matches without existing predictions
     
@@ -201,7 +232,7 @@ def predict_matches_without_predictions(db_path, model_path='afl_elo_model.json'
     predictor = AFLEloPredictor(model_path)
     
     # Get matches without predictions
-    matches = fetch_matches_without_predictions(db_path)
+    matches = fetch_matches_without_predictions(db_path, force_update)
     
     if len(matches) == 0:
         print("No matches without predictions found")
@@ -428,9 +459,8 @@ def update_ratings_with_results(db_path, model_path='afl_elo_model.json', save_u
         m.hscore IS NOT NULL AND m.ascore IS NOT NULL
         AND m.complete = 100  -- Only include fully completed matches
     ORDER BY 
-        m.match_date DESC
-    LIMIT 20  -- Get recent matches, adjust as needed
-    """
+        m.match_date ASC  -- Process in chronological order
+    """ 
     
     recent_matches = pd.read_sql_query(query, conn)
     conn.close()
@@ -439,6 +469,11 @@ def update_ratings_with_results(db_path, model_path='afl_elo_model.json', save_u
     class SimpleEloUpdater:
         def __init__(self, team_ratings, params):
             self.team_ratings = team_ratings.copy()  # Copy the ratings
+            # Add debug prints
+            print("Initial team ratings:")
+            for team, rating in sorted(self.team_ratings.items(), key=lambda x: x[1], reverse=True)[:5]:
+                print(f"  {team}: {rating:.1f}")
+            
             self.base_rating = params['base_rating']
             self.k_factor = params['k_factor']
             self.home_advantage = params['home_advantage']
@@ -534,6 +569,11 @@ def update_ratings_with_results(db_path, model_path='afl_elo_model.json', save_u
                 updates_applied += 1
     
     print(f"Applied {updates_applied} rating updates from recent matches")
+
+    # Add debug print to show final ratings
+    print(f"\nFinal team ratings after {updates_applied} updates:")
+    for team, rating in sorted(updater.team_ratings.items(), key=lambda x: x[1], reverse=True)[:5]:
+        print(f"  {team}: {rating:.1f}")
     
     # If no updates were applied, return the original predictor
     if updates_applied == 0:
@@ -716,11 +756,13 @@ def main():
     
     # Update ratings with recent results
     print("Updating ratings with recent match results...")
-    updater = update_ratings_with_results(db_path, model_path, save_updated_model=True)
-    
+    updated_predictor = update_ratings_with_results(db_path, model_path, save_updated_model=True)
+
     # Make predictions for matches without predictions
-    print("\nMaking predictions for matches without existing predictions...")
-    predictions = predict_matches_without_predictions(db_path, model_path)
+    # Change this to True if you want to force updates for all matches
+    force_update = False
+    print("\nMaking predictions for matches " + ("including existing predictions..." if force_update else "without existing predictions..."))
+    predictions = predict_matches_without_predictions(db_path, model_path, force_update=force_update)
     
     if len(predictions) == 0:
         print("No matches to predict")
