@@ -105,9 +105,9 @@ class AFLEloPredictor:
         return prediction
 
 
-def fetch_upcoming_matches(db_path):
+def fetch_matches_without_predictions(db_path):
     """
-    Fetch upcoming AFL matches from the database
+    Fetch AFL matches without predictions from the database
     
     Parameters:
     -----------
@@ -116,14 +116,40 @@ def fetch_upcoming_matches(db_path):
         
     Returns:
     --------
-    pandas DataFrame with upcoming matches
+    pandas DataFrame with matches that don't have predictions
     """
     conn = sqlite3.connect(db_path)
     
+    # First check if the elo_predictions table exists
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='elo_predictions'")
+    table_exists = cursor.fetchone() is not None
+    
+    if not table_exists:
+        # If the table doesn't exist, create it first
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS elo_predictions (
+            prediction_id INTEGER PRIMARY KEY,
+            match_id INTEGER,
+            prediction_time TEXT,
+            home_win_probability REAL,
+            away_win_probability REAL,
+            predicted_winner TEXT,
+            confidence REAL,
+            home_rating REAL,
+            away_rating REAL,
+            rating_difference REAL,
+            adjusted_rating_difference REAL,
+            FOREIGN KEY (match_id) REFERENCES matches (match_id)
+        )
+        """)
+        conn.commit()
+    
+    # Now fetch matches without predictions
     query = """
     SELECT 
         m.match_id, m.match_number, m.round_number, m.match_date, 
-        m.venue, m.year,
+        m.venue, m.year, m.hscore, m.ascore,
         ht.name as home_team, at.name as away_team
     FROM 
         matches m
@@ -132,21 +158,33 @@ def fetch_upcoming_matches(db_path):
     JOIN 
         teams at ON m.away_team_id = at.team_id
     WHERE 
-        (m.hscore IS NULL OR m.ascore IS NULL OR m.complete < 100) 
-        AND m.match_date >= datetime('now')
+        m.match_id NOT IN (SELECT match_id FROM elo_predictions)
     ORDER BY 
-        m.match_date
+        m.year, m.match_date
     """
     
     df = pd.read_sql_query(query, conn)
+    
+    # Print some debugging information
+    print(f"Found {len(df)} matches without predictions")
+    if len(df) > 0:
+        min_year = df['year'].min()
+        max_year = df['year'].max()
+        print(f"Year range: {min_year} to {max_year}")
+        
+        # Count by year
+        year_counts = df['year'].value_counts().sort_index()
+        for year, count in year_counts.items():
+            print(f"  {year}: {count} matches")
+    
     conn.close()
     
     return df
 
 
-def predict_upcoming_matches(db_path, model_path='afl_elo_model.json'):
+def predict_matches_without_predictions(db_path, model_path='afl_elo_model.json'):
     """
-    Make predictions for upcoming matches
+    Make predictions for matches without existing predictions
     
     Parameters:
     -----------
@@ -162,19 +200,19 @@ def predict_upcoming_matches(db_path, model_path='afl_elo_model.json'):
     # Load the predictor
     predictor = AFLEloPredictor(model_path)
     
-    # Get upcoming matches
-    upcoming_matches = fetch_upcoming_matches(db_path)
+    # Get matches without predictions
+    matches = fetch_matches_without_predictions(db_path)
     
-    if len(upcoming_matches) == 0:
-        print("No upcoming matches found")
+    if len(matches) == 0:
+        print("No matches without predictions found")
         return pd.DataFrame()
     
-    print(f"Found {len(upcoming_matches)} upcoming matches")
+    print(f"Found {len(matches)} matches without predictions")
     
     # Make predictions
     all_predictions = []
     
-    for _, match in upcoming_matches.iterrows():
+    for _, match in matches.iterrows():
         prediction = predictor.predict_match(
             home_team=match['home_team'],
             away_team=match['away_team'],
@@ -188,6 +226,28 @@ def predict_upcoming_matches(db_path, model_path='afl_elo_model.json'):
         prediction['match_date'] = match['match_date']
         prediction['venue'] = match['venue']
         prediction['year'] = match['year']
+        
+        # Add score details if available
+        if pd.notna(match['hscore']) and pd.notna(match['ascore']):
+            prediction['hscore'] = match['hscore']
+            prediction['ascore'] = match['ascore']
+            
+            # Determine actual result
+            if match['hscore'] > match['ascore']:
+                prediction['actual_result'] = 'home_win'
+                prediction['actual_probability'] = 1.0
+            elif match['hscore'] < match['ascore']:
+                prediction['actual_result'] = 'away_win'
+                prediction['actual_probability'] = 0.0
+            else:
+                prediction['actual_result'] = 'draw'
+                prediction['actual_probability'] = 0.5
+            
+            # Check if prediction was correct
+            prediction['correct'] = prediction['predicted_winner'] == prediction['actual_result']
+            
+            # Format the display
+            prediction['result'] = f"{int(match['hscore'])}-{int(match['ascore'])}"
         
         all_predictions.append(prediction)
     
@@ -640,7 +700,7 @@ def main():
     print("AFL ELO Model Predictions")
     print("========================")
     
-    # Set database path - UPDATED TO MATCH YOUR DATABASE NAME
+    # Set database path
     db_path = '../data/afl_predictions.db'
     model_path = 'afl_elo_model.json'
     
@@ -658,20 +718,35 @@ def main():
     print("Updating ratings with recent match results...")
     updater = update_ratings_with_results(db_path, model_path, save_updated_model=True)
     
-    # Make predictions for upcoming matches
-    print("\nMaking predictions for upcoming matches...")
-    predictions = predict_upcoming_matches(db_path, model_path)
+    # Make predictions for matches without predictions
+    print("\nMaking predictions for matches without existing predictions...")
+    predictions = predict_matches_without_predictions(db_path, model_path)
     
     if len(predictions) == 0:
-        print("No upcoming matches to predict")
+        print("No matches to predict")
     else:
         # Display predictions
-        print("\nPredictions for upcoming matches:")
+        print("\nPredictions for matches:")
         pd.set_option('display.max_columns', None)
         pd.set_option('display.width', 120)
-        print(predictions[['round_number', 'match_date', 'home_team', 'away_team', 
-                          'home_win_probability', 'away_win_probability', 
-                          'predicted_winner', 'confidence']].to_string(index=False))
+        display_cols = ['round_number', 'match_date', 'home_team', 'away_team']
+        
+        # Add result columns if available
+        if 'result' in predictions.columns:
+            display_cols.append('result')
+        
+        display_cols.extend(['home_win_probability', 'away_win_probability', 'predicted_winner', 'confidence'])
+        
+        # Add accuracy columns if available
+        if 'correct' in predictions.columns:
+            display_cols.append('correct')
+        
+        print(predictions[display_cols].to_string(index=False))
+        
+        # Calculate accuracy if results are available
+        if 'correct' in predictions.columns:
+            accuracy = predictions['correct'].mean() if len(predictions) > 0 else 0
+            print(f"\nOverall accuracy: {accuracy:.1%}")
         
         # Save predictions to database
         print("\nSaving predictions to database...")
@@ -681,102 +756,6 @@ def main():
         output_file = 'elo_predictions.csv'
         predictions.to_csv(output_file, index=False)
         print(f"Predictions saved to {output_file}")
-    
-    # Now predict completed 2025 matches using the current model
-    print("\nPredicting and analyzing completed 2025 matches...")
-    conn = sqlite3.connect(db_path)
-    
-    # Get completed matches for 2025
-    completed_matches_query = """
-    SELECT 
-        m.match_id, m.round_number, m.match_date, 
-        ht.name as home_team, at.name as away_team,
-        m.hscore, m.ascore, m.year, m.venue
-    FROM 
-        matches m
-    JOIN 
-        teams ht ON m.home_team_id = ht.team_id
-    JOIN 
-        teams at ON m.away_team_id = at.team_id
-    WHERE 
-        m.year = 2025
-        AND m.hscore IS NOT NULL 
-        AND m.ascore IS NOT NULL
-    ORDER BY 
-        m.match_date
-    """
-    
-    completed_matches = pd.read_sql_query(completed_matches_query, conn)
-    conn.close()
-    
-    if len(completed_matches) == 0:
-        print("No completed 2025 matches found")
-        return
-    
-    print(f"Found {len(completed_matches)} completed matches for 2025")
-    
-    # Load the predictor
-    predictor = AFLEloPredictor(model_path)
-    
-    # Make predictions for each completed match
-    completed_predictions = []
-    
-    for _, match in completed_matches.iterrows():
-        prediction = predictor.predict_match(
-            home_team=match['home_team'],
-            away_team=match['away_team'],
-            include_ratings=True
-        )
-        
-        # Add match details
-        prediction['match_id'] = match['match_id']
-        prediction['round_number'] = match['round_number']
-        prediction['match_date'] = match['match_date']
-        prediction['venue'] = match['venue']
-        prediction['year'] = match['year']
-        prediction['hscore'] = match['hscore']
-        prediction['ascore'] = match['ascore']
-        
-        # Determine actual result
-        if match['hscore'] > match['ascore']:
-            prediction['actual_result'] = 'home_win'
-            prediction['actual_probability'] = 1.0
-        elif match['hscore'] < match['ascore']:
-            prediction['actual_result'] = 'away_win'
-            prediction['actual_probability'] = 0.0
-        else:
-            prediction['actual_result'] = 'draw'
-            prediction['actual_probability'] = 0.5
-        
-        # Check if prediction was correct
-        prediction['correct'] = prediction['predicted_winner'] == prediction['actual_result']
-        
-        # Format the display
-        prediction['result'] = f"{int(match['hscore'])}-{int(match['ascore'])}"
-        
-        completed_predictions.append(prediction)
-    
-    # Convert to DataFrame
-    completed_df = pd.DataFrame(completed_predictions)
-    
-    # Calculate overall accuracy
-    accuracy = completed_df['correct'].mean() if len(completed_df) > 0 else 0
-    
-    # Display results
-    print("\nPredictions for Completed 2025 Matches:")
-    pd.set_option('display.max_columns', None)
-    pd.set_option('display.width', 120)
-    display_cols = ['round_number', 'match_date', 'home_team', 'away_team', 
-                    'result', 'home_win_probability', 'predicted_winner', 
-                    'actual_result', 'correct']
-    print(completed_df[display_cols].to_string(index=False))
-    
-    print(f"\nOverall accuracy: {accuracy:.1%}")
-    
-    # Save to CSV
-    output_file = 'elo_completed_predictions_2025.csv'
-    completed_df.to_csv(output_file, index=False)
-    print(f"Completed match predictions saved to {output_file}")
 
 if __name__ == "__main__":
     main()
