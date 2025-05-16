@@ -48,7 +48,8 @@ router.get('/', catchAsync(async (req, res) => {
     selectedYear,
     selectedUser: null,
     success: req.query.success || null,
-    error: req.query.error || null
+    error: req.query.error || null,
+    isAdmin: true
   });
 }));
 
@@ -145,7 +146,7 @@ router.post('/predictions/:userId/save', catchAsync(async (req, res) => {
   if (prob < 0) prob = 0;
   if (prob > 100) prob = 100;
   
-  await predictionService.savePrediction(matchId, userId, prob);
+await predictionService.savePrediction(matchId, userId, prob, { adminOverride: true });
   
   logger.info(`Prediction saved for user ${userId} on match ${matchId}: ${prob}%`);
   

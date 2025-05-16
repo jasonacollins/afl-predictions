@@ -116,12 +116,13 @@ router.post('/save', catchAsync(async (req, res) => {
     `SELECT m.match_date FROM matches m WHERE m.match_id = ?`,
     [matchId]
   );
-  
+
   if (!match) {
     throw createNotFoundError('Match');
   }
-  
-  if (match.match_date) {
+
+  // Only perform lock check for non-admin users
+  if (!req.session.isAdmin && match.match_date) {
     try {
       const matchDate = new Date(match.match_date);
       if (new Date() > matchDate) {

@@ -59,8 +59,7 @@ async function getAllPredictionsWithDetails() {
 }
 
 // Save or update prediction
-async function savePrediction(matchId, predictorId, probability) {
-  try {
+async function savePrediction(matchId, predictorId, probability, options = {}) {  try {
     // Validate inputs
     if (!matchId || !predictorId || probability === undefined) {
       throw createValidationError('Match ID, predictor ID, and probability are required');

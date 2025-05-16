@@ -128,7 +128,7 @@ function renderMatches(matches) {
           </div>
         ` : ''}
         
-        ${!isLocked ? `
+        ${(!isLocked || window.isAdmin) ? `
           <div class="prediction-controls">
             <div class="prediction-inputs">
               <div class="team-prediction">
