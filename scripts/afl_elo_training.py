@@ -2,15 +2,15 @@ import pandas as pd
 import numpy as np
 import sqlite3
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import log_loss, brier_score_loss
 import matplotlib.pyplot as plt
 import json
 import os
-
+import argparse
+from datetime import datetime
 
 class AFLEloModel:
-    def __init__(self, base_rating=1500, k_factor=30, home_advantage=50, 
-                 margin_factor=0.5, season_carryover=0.75, max_margin=100):
+    def __init__(self, base_rating=1500, k_factor=20, home_advantage=50, 
+                 margin_factor=0.3, season_carryover=0.6, max_margin=120):
         """
         Initialize the AFL ELO model with configurable parameters
         
@@ -36,6 +36,7 @@ class AFLEloModel:
         self.season_carryover = season_carryover
         self.max_margin = max_margin
         self.team_ratings = {}
+        self.yearly_ratings = {}  # Track ratings at the end of each year
         self.rating_history = []  # To track rating changes over time
         self.predictions = []     # To store model predictions
     
@@ -60,7 +61,7 @@ class AFLEloModel:
         
         return win_probability
     
-    def update_ratings(self, home_team, away_team, hscore, ascore, year):
+    def update_ratings(self, home_team, away_team, hscore, ascore, year, match_id=None, round_number=None, match_date=None, venue=None):
         """
         Update team ratings based on match result
         
@@ -76,6 +77,14 @@ class AFLEloModel:
             Score of away team
         year: int
             Season year (used for tracking)
+        match_id: int
+            Optional match ID for tracking
+        round_number: str
+            Optional round number for tracking
+        match_date: str
+            Optional match date for tracking
+        venue: str
+            Optional venue for tracking
         
         Returns:
         --------
@@ -119,6 +128,10 @@ class AFLEloModel:
         
         # Store the prediction and outcome
         prediction_info = {
+            'match_id': match_id,
+            'round_number': round_number,
+            'match_date': match_date,
+            'venue': venue,
             'year': year,
             'home_team': home_team,
             'away_team': away_team,
@@ -126,8 +139,14 @@ class AFLEloModel:
             'ascore': ascore,
             'pre_match_home_rating': home_rating,
             'pre_match_away_rating': away_rating,
-            'predicted_home_win_prob': home_win_prob,
-            'actual_result': actual_result,
+            'rating_difference': home_rating - away_rating,
+            'adjusted_rating_difference': (home_rating + self.home_advantage) - away_rating,
+            'home_win_probability': home_win_prob,
+            'away_win_probability': 1 - home_win_prob,
+            'predicted_winner': home_team if home_win_prob > 0.5 else away_team,
+            'confidence': max(home_win_prob, 1 - home_win_prob),
+            'actual_result': 'home_win' if hscore > ascore else ('away_win' if hscore < ascore else 'draw'),
+            'correct': (home_win_prob > 0.5 and hscore > ascore) or (home_win_prob < 0.5 and hscore < ascore) or (home_win_prob == 0.5 and hscore == ascore),
             'margin': margin,
             'rating_change': rating_change
         }
@@ -137,6 +156,8 @@ class AFLEloModel:
         # Store rating history
         self.rating_history.append({
             'year': year,
+            'match_id': match_id,
+            'match_date': match_date,
             'home_team': home_team,
             'away_team': away_team,
             'home_rating': self.team_ratings[home_team],
@@ -150,6 +171,13 @@ class AFLEloModel:
         for team in self.team_ratings:
             # Regress ratings toward base rating
             self.team_ratings[team] = self.base_rating + self.season_carryover * (self.team_ratings[team] - self.base_rating)
+        
+        # Store ratings before the season starts
+        self.yearly_ratings[f"{new_year}_start"] = self.team_ratings.copy()
+    
+    def save_yearly_ratings(self, year):
+        """Save the current ratings as end-of-year ratings"""
+        self.yearly_ratings[str(year)] = self.team_ratings.copy()
     
     def evaluate_model(self):
         """Calculate accuracy and other metrics for model evaluation"""
@@ -160,25 +188,22 @@ class AFLEloModel:
                 'log_loss': float('inf')
             }
         
-        y_true = [p['actual_result'] for p in self.predictions]
-        y_pred = [p['predicted_home_win_prob'] for p in self.predictions]
+        y_true = [1 if p['actual_result'] == 'home_win' else (0.5 if p['actual_result'] == 'draw' else 0) for p in self.predictions]
+        y_pred = [p['home_win_probability'] for p in self.predictions]
         
         # Calculate binary prediction accuracy (did we predict the winner correctly?)
         binary_predictions = [1 if prob >= 0.5 else 0 for prob in y_pred]
-        accuracy = sum(1 for true, pred in zip(y_true, binary_predictions) if true == pred) / len(y_true)
+        accuracy = sum(1 for true, pred in zip(y_true, binary_predictions) if 
+                      (true == 1 and pred == 1) or (true == 0 and pred == 0) or (true == 0.5)) / len(y_true)
         
         # Calculate Brier score (lower is better)
-        brier = 0
-        for true, pred in zip(y_true, y_pred):
-            # Brier score is (forecast - outcome)^2
-            brier += (pred/100 - true)**2
-        brier /= len(y_true)
+        brier = sum((pred - true)**2 for true, pred in zip(y_true, y_pred)) / len(y_true)
 
         # Calculate log loss (lower is better)
         logloss = 0
         for true, pred in zip(y_true, y_pred):
-            # Convert percentage to probability (0-1)
-            p = max(min(pred/100, 0.999), 0.001)  # Clip to avoid log(0) issues
+            # Clip probability to avoid log(0) issues
+            p = max(min(pred, 0.999), 0.001)
             
             # Calculate loss based on actual outcome
             if true == 1.0:
@@ -209,31 +234,25 @@ class AFLEloModel:
                 'season_carryover': self.season_carryover,
                 'max_margin': self.max_margin,
             },
-            'team_ratings': self.team_ratings
+            'team_ratings': self.team_ratings,
+            'yearly_ratings': self.yearly_ratings
         }
         
         with open(filename, 'w') as f:
             json.dump(model_data, f, indent=4)
     
-    def load_model(self, filename):
-        """Load model parameters and team ratings"""
-        with open(filename, 'r') as f:
-            model_data = json.load(f)
+    def save_predictions_to_csv(self, filename):
+        """Save all predictions to a CSV file"""
+        if not self.predictions:
+            print("No predictions to save")
+            return
         
-        # Set parameters
-        params = model_data['parameters']
-        self.base_rating = params['base_rating']
-        self.k_factor = params['k_factor']
-        self.home_advantage = params['home_advantage']
-        self.margin_factor = params['margin_factor']
-        self.season_carryover = params['season_carryover']
-        self.max_margin = params['max_margin']
-        
-        # Set team ratings
-        self.team_ratings = model_data['team_ratings']
+        df = pd.DataFrame(self.predictions)
+        df.to_csv(filename, index=False)
+        print(f"Saved {len(df)} predictions to {filename}")
 
 
-def fetch_afl_data(db_path, start_year=1990, end_year=2024):
+def fetch_afl_data(db_path, end_year=None):
     """
     Fetch historical AFL match data from SQLite database
     
@@ -241,10 +260,8 @@ def fetch_afl_data(db_path, start_year=1990, end_year=2024):
     -----------
     db_path: str
         Path to SQLite database
-    start_year: int
-        Starting year for data
     end_year: int
-        Ending year for data
+        Optional ending year for data. If provided, only games up to this year are fetched.
         
     Returns:
     --------
@@ -252,10 +269,12 @@ def fetch_afl_data(db_path, start_year=1990, end_year=2024):
     """
     conn = sqlite3.connect(db_path)
     
+    year_clause = f"AND m.year <= {end_year}" if end_year else ""
+    
     query = f"""
     SELECT 
         m.match_id, m.match_number, m.round_number, m.match_date, 
-        m.year, m.hscore, m.ascore, m.hgoals, m.hbehinds, m.agoals, m.abehinds, m.complete,
+        m.venue, m.year, m.hscore, m.ascore, 
         ht.name as home_team, at.name as away_team
     FROM 
         matches m
@@ -264,8 +283,8 @@ def fetch_afl_data(db_path, start_year=1990, end_year=2024):
     JOIN 
         teams at ON m.away_team_id = at.team_id
     WHERE 
-        m.year >= {start_year} AND m.year <= {end_year}
-        AND m.hscore IS NOT NULL AND m.ascore IS NOT NULL
+        m.hscore IS NOT NULL AND m.ascore IS NOT NULL
+        {year_clause}
     ORDER BY 
         m.year, m.match_date
     """
@@ -296,11 +315,11 @@ def train_elo_model(data, params=None):
     else:
         model = AFLEloModel(
             base_rating=params.get('base_rating', 1500),
-            k_factor=params.get('k_factor', 30),
+            k_factor=params.get('k_factor', 20),
             home_advantage=params.get('home_advantage', 50),
-            margin_factor=params.get('margin_factor', 0.5),
-            season_carryover=params.get('season_carryover', 0.75),
-            max_margin=params.get('max_margin', 100)
+            margin_factor=params.get('margin_factor', 0.3),
+            season_carryover=params.get('season_carryover', 0.6),
+            max_margin=params.get('max_margin', 120)
         )
     
     # Get unique teams
@@ -315,6 +334,9 @@ def train_elo_model(data, params=None):
     for _, match in data.iterrows():
         # Apply season carryover at the start of a new season
         if prev_year is not None and match['year'] != prev_year:
+            # Save ratings at the end of the previous year
+            model.save_yearly_ratings(prev_year)
+            # Apply carryover for the new year
             model.apply_season_carryover(match['year'])
         
         # Update ratings based on match result
@@ -323,15 +345,23 @@ def train_elo_model(data, params=None):
             away_team=match['away_team'],
             hscore=match['hscore'],
             ascore=match['ascore'],
-            year=match['year']
+            year=match['year'],
+            match_id=match['match_id'],
+            round_number=match['round_number'],
+            match_date=match['match_date'],
+            venue=match['venue']
         )
         
         prev_year = match['year']
     
+    # Save ratings for the final year
+    if prev_year:
+        model.save_yearly_ratings(prev_year)
+    
     return model
 
 
-def parameter_tuning(data, param_grid, cv=5):
+def parameter_tuning(data, param_grid, cv=5, max_combinations=None):
     """
     Find optimal ELO parameters using grid search
     
@@ -343,6 +373,8 @@ def parameter_tuning(data, param_grid, cv=5):
         Dictionary of parameter ranges to test
     cv: int
         Number of cross-validation splits
+    max_combinations: int
+        Maximum number of parameter combinations to test (None for all)
         
     Returns:
     --------
@@ -361,7 +393,7 @@ def parameter_tuning(data, param_grid, cv=5):
     # Create parameter combinations
     param_combinations = []
     
-    # Simple grid search using loops (for illustration)
+    # Simple grid search using loops
     for k_factor in param_grid['k_factor']:
         for home_advantage in param_grid['home_advantage']:
             for margin_factor in param_grid['margin_factor']:
@@ -377,14 +409,37 @@ def parameter_tuning(data, param_grid, cv=5):
                         }
                         param_combinations.append(params)
     
-    print(f"Testing {len(param_combinations)} parameter combinations...")
+    # Limit the number of combinations if specified
+    if max_combinations and len(param_combinations) > max_combinations:
+        print(f"Limiting to {max_combinations} random parameter combinations out of {len(param_combinations)} total")
+        import random
+        random.shuffle(param_combinations)
+        param_combinations = param_combinations[:max_combinations]
+    
+    total_combinations = len(param_combinations)
+    print(f"Testing {total_combinations} parameter combinations with {cv}-fold cross-validation...")
+    
+    # Print a few examples of parameter combinations
+    print("\nSample of parameter combinations to test:")
+    for i, params in enumerate(param_combinations[:3]):
+        print(f"  Combination {i+1}: {params}")
+    if len(param_combinations) > 3:
+        print(f"  ... plus {len(param_combinations) - 3} more combinations")
     
     # Track progress
-    total_combinations = len(param_combinations)
+    start_time = datetime.now()
     
     for i, params in enumerate(param_combinations):
         if i % 10 == 0:  # Print progress every 10 combinations
-            print(f"Testing combination {i+1}/{total_combinations}")
+            elapsed = datetime.now() - start_time
+            if i > 0:
+                avg_time_per_combo = elapsed.total_seconds() / i
+                est_remaining = (total_combinations - i) * avg_time_per_combo
+                print(f"Testing combination {i+1}/{total_combinations} - "
+                      f"Elapsed: {elapsed.total_seconds()/60:.1f} min, "
+                      f"Est. remaining: {est_remaining/60:.1f} min")
+            else:
+                print(f"Testing combination {i+1}/{total_combinations}")
         
         # Cross-validation scores for this parameter set
         cv_scores = []
@@ -425,9 +480,6 @@ def parameter_tuning(data, param_grid, cv=5):
             # Calculate log loss for this fold
             log_losses = []
             for true_val, pred_val in zip(test_results, test_probs):
-                # Clip predicted probability to avoid log(0)
-                pred_val = max(min(pred_val, 0.999), 0.001)
-                
                 # Calculate loss based on actual outcome
                 if true_val == 1.0:
                     loss = -np.log(pred_val)
@@ -456,6 +508,20 @@ def parameter_tuning(data, param_grid, cv=5):
         if avg_score < best_score:
             best_score = avg_score
             best_params = params
+            print(f"\nNew best parameters found (log loss: {best_score:.4f}):")
+            for k, v in best_params.items():
+                print(f"  {k}: {v}")
+    
+    # Sort results by score
+    all_results.sort(key=lambda x: x['log_loss'])
+    
+    # Print the top 3 parameter combinations
+    print("\nTop 3 parameter combinations:")
+    for i, result in enumerate(all_results[:3]):
+        print(f"  {i+1}. Log loss: {result['log_loss']:.4f}, Parameters: {result['params']}")
+    
+    total_time = datetime.now() - start_time
+    print(f"\nParameter tuning completed in {total_time.total_seconds()/60:.1f} minutes")
     
     return {
         'best_params': best_params,
@@ -464,153 +530,114 @@ def parameter_tuning(data, param_grid, cv=5):
     }
 
 
-def plot_rating_history(model, top_n=8):
-    """Plot rating history for top N teams"""
-    # Convert rating history to DataFrame
-    ratings_df = pd.DataFrame()
-    
-    for entry in model.rating_history:
-        # Add home team rating
-        new_row_home = {
-            'year': entry['year'],
-            'team': entry['home_team'],
-            'rating': entry['home_rating']
-        }
-        ratings_df = pd.concat([ratings_df, pd.DataFrame([new_row_home])], ignore_index=True)
-        
-        # Add away team rating
-        new_row_away = {
-            'year': entry['year'],
-            'team': entry['away_team'],
-            'rating': entry['away_rating']
-        }
-        ratings_df = pd.concat([ratings_df, pd.DataFrame([new_row_away])], ignore_index=True)
-    
-    # Get final ratings for each team
-    final_ratings = ratings_df.drop_duplicates(subset=['team'], keep='last').sort_values('rating', ascending=False)
-    
-    # Select top N teams
-    top_teams = final_ratings.head(top_n)['team'].tolist()
-    
-    # Filter data for these teams
-    plot_data = ratings_df[ratings_df['team'].isin(top_teams)]
-    
-    plt.figure(figsize=(12, 8))
-    
-    for team in top_teams:
-        team_data = plot_data[plot_data['team'] == team]
-        plt.plot(team_data['year'], team_data['rating'], label=team)
-    
-    plt.axhline(y=1500, color='gray', linestyle='--', alpha=0.5, label='Base Rating')
-    plt.title('ELO Rating History for Top Teams')
-    plt.xlabel('Year')
-    plt.ylabel('ELO Rating')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    
-    plt.savefig('elo_rating_history.png')
-    plt.close()
-
-
-def plot_model_evaluation(model):
-    """Plot model evaluation metrics"""
-    # Convert predictions to DataFrame
-    pred_df = pd.DataFrame(model.predictions)
-    
-    # Group by year
-    yearly_metrics = pred_df.groupby('year').apply(lambda x: pd.Series({
-        'accuracy': sum(1 for i, row in x.iterrows() 
-                       if (row['predicted_home_win_prob'] >= 0.5 and row['actual_result'] == 1) or 
-                          (row['predicted_home_win_prob'] < 0.5 and row['actual_result'] == 0)) / len(x),
-        'brier_score': sum((row['predicted_home_win_prob'] - row['actual_result'])**2 for i, row in x.iterrows()) / len(x),
-        'log_loss': -1 * sum((row['actual_result'] * np.log(max(0.001, row['predicted_home_win_prob'])) + 
-                             (1-row['actual_result']) * np.log(max(0.001, 1-row['predicted_home_win_prob']))) 
-                            for i, row in x.iterrows()) / len(x),
-        'num_matches': len(x)
-    }))
-    
-    # Create metrics plot
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
-    
-    # Accuracy plot
-    ax1.plot(yearly_metrics.index, yearly_metrics['accuracy'], marker='o', label='Accuracy')
-    ax1.set_ylabel('Accuracy')
-    ax1.set_title('Yearly Prediction Accuracy')
-    ax1.grid(True, alpha=0.3)
-    ax1.axhline(y=0.5, color='red', linestyle='--', alpha=0.5, label='Random Guess')
-    ax1.legend()
-    
-    # Brier and Log Loss plot
-    ax2.plot(yearly_metrics.index, yearly_metrics['brier_score'], marker='s', label='Brier Score')
-    ax2.plot(yearly_metrics.index, yearly_metrics['log_loss'], marker='^', label='Log Loss')
-    ax2.set_ylabel('Error Score (lower is better)')
-    ax2.set_title('Yearly Error Metrics')
-    ax2.grid(True, alpha=0.3)
-    ax2.legend()
-    
-    plt.xlabel('Year')
-    plt.tight_layout()
-    
-    plt.savefig('elo_model_evaluation.png')
-    plt.close()
-    
-    # Return the yearly metrics
-    return yearly_metrics
-
-
 def main():
-    """Main function to train and evaluate the ELO model"""
+    """Main function to train the ELO model"""
+    parser = argparse.ArgumentParser(description='Train AFL ELO model')
+    parser.add_argument('--end-year', type=int, help='End year for training data (inclusive)', 
+                        default=datetime.now().year)
+    parser.add_argument('--db-path', type=str, default='../data/afl_predictions.db',
+                        help='Path to the SQLite database')
+    parser.add_argument('--output-dir', type=str, default='.',
+                        help='Directory to save output files')
+    parser.add_argument('--no-tune-parameters', action='store_true',
+                        help='Skip parameter tuning (faster but may give worse results)')
+    parser.add_argument('--cv-folds', type=int, default=3,
+                        help='Number of cross-validation folds for parameter tuning')
+    parser.add_argument('--max-combinations', type=int, default=500,
+                        help='Maximum number of parameter combinations to test (None for all)')
+    
+    args = parser.parse_args()
+    
     print("AFL ELO Model Training")
     print("=====================")
-    
-    # Set database path - UPDATED TO MATCH YOUR DATABASE NAME
-    db_path = '../data/afl_predictions.db'
+    print(f"Training with data up to and including year: {args.end_year}")
     
     # Check if database exists
-    if not os.path.exists(db_path):
-        print(f"Error: Database not found at {db_path}")
-        print("Please update the db_path variable to your database location")
+    if not os.path.exists(args.db_path):
+        print(f"Error: Database not found at {args.db_path}")
+        print("Please update the db_path argument")
         return
+    
+    # Make sure output directory exists
+    os.makedirs(args.output_dir, exist_ok=True)
     
     # Fetch data from database
     print("Fetching AFL match data from database...")
-    data = fetch_afl_data(db_path, start_year=1990)
+    data = fetch_afl_data(args.db_path, end_year=args.end_year)
     print(f"Fetched {len(data)} matches from {data['year'].min()} to {data['year'].max()}")
     
-    # Define whether to perform parameter tuning or use default parameters
-    do_tuning = True
-    
-    if do_tuning:
-        print("Performing parameter tuning...")
+    if not args.no_tune_parameters:
+        print("\nPerforming parameter tuning...")
         
-        # Define parameter grid
+        # Define parameter grid - extensive version
         param_grid = {
-            'base_rating': [1500],  # Keep base rating fixed
-            'k_factor': [20, 30, 40],
-            'home_advantage': [30, 50, 70],
-            'margin_factor': [0.3, 0.5, 0.7],
-            'season_carryover': [0.6, 0.75, 0.85],
-            'max_margin': [80, 100, 120]
+            'base_rating': [1500],  # Usually kept fixed
+            'k_factor': [10, 15, 20, 25, 30, 40],  # How quickly ratings change
+            'home_advantage': [20, 30, 40, 50, 60, 70],  # Home ground advantage in rating points
+            'margin_factor': [0.1, 0.2, 0.3, 0.4, 0.5, 0.7],  # How much margin affects rating changes
+            'season_carryover': [0.5, 0.6, 0.7, 0.75, 0.8, 0.9],  # How much rating carries over between seasons
+            'max_margin': [60, 80, 100, 120, 140, 160]  # Maximum margin to consider
         }
         
+        # Report the total number of combinations
+        total_combos = (len(param_grid['k_factor']) * 
+                        len(param_grid['home_advantage']) * 
+                        len(param_grid['margin_factor']) * 
+                        len(param_grid['season_carryover']) * 
+                        len(param_grid['max_margin']))
+        
+        print(f"Parameter grid has {total_combos} possible combinations")
+        
         # Perform parameter tuning
-        tuning_results = parameter_tuning(data, param_grid, cv=3)
+        tuning_results = parameter_tuning(data, param_grid, cv=args.cv_folds, max_combinations=args.max_combinations)
         
         # Display best parameters
         best_params = tuning_results['best_params']
-        print(f"Best parameters found:")
+        print(f"\nBest parameters found:")
         for key, value in best_params.items():
             print(f"  {key}: {value}")
         print(f"Best log loss: {tuning_results['best_score']:.4f}")
         
+        # Save tuning results
+        tuning_file = os.path.join(args.output_dir, f"afl_elo_tuning_results_{args.end_year}.json")
+        with open(tuning_file, 'w') as f:
+            # Convert numpy arrays to lists for JSON serialization
+            tuning_results_json = {
+                'best_params': best_params,
+                'best_score': float(tuning_results['best_score']),
+                'all_results': [
+                    {
+                        'params': result['params'],
+                        'log_loss': float(result['log_loss']),
+                        'cv_scores': [float(score) for score in result['cv_scores']]
+                    }
+                    for result in tuning_results['all_results']
+                ]
+            }
+            json.dump(tuning_results_json, f, indent=4)
+        
+        print(f"Tuning results saved to {tuning_file}")
+        
         # Train model with best parameters
-        print("Training model with best parameters...")
+        print("\nTraining model with best parameters...")
         model = train_elo_model(data, best_params)
     else:
+        # Use default parameters
+        params = {
+            'base_rating': 1500,
+            'k_factor': 20,
+            'home_advantage': 50,
+            'margin_factor': 0.3,
+            'season_carryover': 0.6,
+            'max_margin': 120
+        }
+        print("\nSkipping parameter tuning and using default parameters...")
+        print("Use --tune-parameters flag to find optimal parameters")
+        for key, value in params.items():
+            print(f"  {key}: {value}")
+        
         # Train model with default parameters
-        print("Training model with default parameters...")
-        model = train_elo_model(data)
+        model = train_elo_model(data, params)
     
     # Evaluate model
     metrics = model.evaluate_model()
@@ -619,19 +646,15 @@ def main():
     print(f"  Brier Score: {metrics['brier_score']:.4f}")
     print(f"  Log Loss: {metrics['log_loss']:.4f}")
     
-    # Save model
-    model.save_model('afl_elo_model.json')
-    print("\nModel saved to afl_elo_model.json")
+    # Save model and predictions
+    output_prefix = f"afl_elo_trained_to_{args.end_year}"
+    model_file = os.path.join(args.output_dir, f"{output_prefix}.json")
+    predictions_file = os.path.join(args.output_dir, f"{output_prefix}_predictions.csv")
     
-    # Plot rating history
-    print("Creating rating history plot...")
-    plot_rating_history(model)
-    print("Rating history plot saved to elo_rating_history.png")
+    model.save_model(model_file)
+    print(f"\nModel saved to {model_file}")
     
-    # Plot model evaluation
-    print("Creating model evaluation plot...")
-    yearly_metrics = plot_model_evaluation(model)
-    print("Model evaluation plot saved to elo_model_evaluation.png")
+    model.save_predictions_to_csv(predictions_file)
     
     # Display final team ratings
     print("\nFinal Team Ratings:")

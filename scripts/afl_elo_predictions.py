@@ -4,10 +4,11 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import os
+import argparse
 
 
 class AFLEloPredictor:
-    def __init__(self, model_path='afl_elo_model.json'):
+    def __init__(self, model_path):
         """
         Initialize the ELO predictor with a trained model
         
@@ -17,6 +18,8 @@ class AFLEloPredictor:
             Path to the saved ELO model JSON file
         """
         self.load_model(model_path)
+        self.predictions = []  # Store all predictions
+        self.rating_history = []  # Store rating history
     
     def load_model(self, model_path):
         """Load the trained ELO model"""
@@ -36,12 +39,22 @@ class AFLEloPredictor:
             # Set team ratings
             self.team_ratings = model_data['team_ratings']
             
-            print(f"Loaded ELO model with {len(self.team_ratings)} team ratings")
+            # Store yearly ratings if available
+            self.yearly_ratings = model_data.get('yearly_ratings', {})
             
+            print(f"Loaded ELO model with {len(self.team_ratings)} team ratings")
+            print("Model parameters:")
+            for param, value in self.params.items():
+                print(f"  {param}: {value}")
+                
             return True
         except Exception as e:
             print(f"Error loading model: {e}")
             return False
+    
+    def _cap_margin(self, margin):
+        """Cap margin to reduce effect of blowouts"""
+        return min(abs(margin), self.max_margin) * np.sign(margin)
     
     def calculate_win_probability(self, home_team, away_team):
         """Calculate probability of home team winning based on ELO difference"""
@@ -56,9 +69,28 @@ class AFLEloPredictor:
         
         return win_probability
     
-    def predict_match(self, home_team, away_team, include_ratings=False):
+    def apply_season_carryover(self, new_year):
+        """Apply regression to mean between seasons"""
+        print(f"Applying season carryover for {new_year}...")
+        
+        # Store current ratings before carryover
+        ratings_before = self.team_ratings.copy()
+        
+        for team in self.team_ratings:
+            # Regress ratings toward base rating
+            self.team_ratings[team] = self.base_rating + self.season_carryover * (self.team_ratings[team] - self.base_rating)
+        
+        # Store the ratings transition in history
+        self.rating_history.append({
+            'event': 'season_carryover',
+            'year': new_year,
+            'ratings_before': ratings_before,
+            'ratings_after': self.team_ratings.copy()
+        })
+    
+    def update_ratings(self, home_team, away_team, hscore, ascore, match_id=None, year=None, round_number=None, match_date=None, venue=None):
         """
-        Predict the outcome of a match
+        Update team ratings based on match result
         
         Parameters:
         -----------
@@ -66,8 +98,142 @@ class AFLEloPredictor:
             Name of home team
         away_team: str
             Name of away team
-        include_ratings: bool
-            Whether to include team ratings in the output
+        hscore: int
+            Score of home team
+        ascore: int
+            Score of away team
+        match_id: int
+            Optional match ID for tracking
+        year: int
+            Season year
+        round_number: str
+            Optional round number for tracking
+        match_date: str
+            Optional match date for tracking
+        venue: str
+            Optional venue for tracking
+            
+        Returns:
+        --------
+        dict with updated prediction information
+        """
+        # Ensure teams exist in ratings
+        if home_team not in self.team_ratings:
+            print(f"Warning: {home_team} not found in ratings, using base rating")
+            self.team_ratings[home_team] = self.base_rating
+            
+        if away_team not in self.team_ratings:
+            print(f"Warning: {away_team} not found in ratings, using base rating")
+            self.team_ratings[away_team] = self.base_rating
+        
+        # Get current ratings
+        home_rating = self.team_ratings[home_team]
+        away_rating = self.team_ratings[away_team]
+        
+        # Calculate win probability
+        home_win_prob = self.calculate_win_probability(home_team, away_team)
+        
+        # Store the pre-update prediction info
+        prediction_info = {
+            'match_id': match_id,
+            'round_number': round_number,
+            'match_date': match_date,
+            'venue': venue,
+            'year': year,
+            'home_team': home_team,
+            'away_team': away_team,
+            'pre_match_home_rating': home_rating,
+            'pre_match_away_rating': away_rating,
+            'rating_difference': home_rating - away_rating,
+            'adjusted_rating_difference': (home_rating + self.home_advantage) - away_rating,
+            'home_win_probability': home_win_prob,
+            'away_win_probability': 1 - home_win_prob,
+            'predicted_winner': home_team if home_win_prob > 0.5 else away_team,
+            'confidence': max(home_win_prob, 1 - home_win_prob)
+        }
+        
+        # If scores are provided, update ratings and add result info
+        if hscore is not None and ascore is not None:
+            # Determine actual result (1 for home win, 0 for away win)
+            actual_result = 1.0 if hscore > ascore else 0.0
+            
+            # Handle draws (0.5 points each)
+            if hscore == ascore:
+                actual_result = 0.5
+            
+            # Calculate rating change based on result and margin
+            margin = hscore - ascore
+            capped_margin = self._cap_margin(margin)
+            
+            # Adjust K-factor by margin
+            margin_multiplier = 1.0
+            if self.margin_factor > 0:
+                margin_multiplier = np.log1p(abs(capped_margin) * self.margin_factor) / np.log1p(self.max_margin * self.margin_factor)
+            
+            # Calculate ELO update
+            rating_change = self.k_factor * margin_multiplier * (actual_result - home_win_prob)
+            
+            # Update ratings
+            self.team_ratings[home_team] += rating_change
+            self.team_ratings[away_team] -= rating_change
+            
+            # Add result info to prediction
+            prediction_info.update({
+                'hscore': hscore,
+                'ascore': ascore,
+                'actual_result': 'home_win' if hscore > ascore else ('away_win' if hscore < ascore else 'draw'),
+                'margin': margin,
+                'rating_change': rating_change,
+                'post_match_home_rating': self.team_ratings[home_team],
+                'post_match_away_rating': self.team_ratings[away_team],
+                'correct': (home_win_prob > 0.5 and hscore > ascore) or 
+                           (home_win_prob < 0.5 and hscore < ascore) or 
+                           (home_win_prob == 0.5 and hscore == ascore)
+            })
+            
+            # Store the ratings change in history
+            self.rating_history.append({
+                'event': 'match',
+                'match_id': match_id,
+                'year': year,
+                'round_number': round_number,
+                'match_date': match_date,
+                'home_team': home_team,
+                'away_team': away_team,
+                'home_score': hscore,
+                'away_score': ascore,
+                'home_rating_before': home_rating,
+                'away_rating_before': away_rating,
+                'home_rating_after': self.team_ratings[home_team],
+                'away_rating_after': self.team_ratings[away_team],
+                'rating_change': rating_change
+            })
+        
+        # Store the prediction
+        self.predictions.append(prediction_info)
+        
+        return prediction_info
+    
+    def predict_match(self, home_team, away_team, match_id=None, year=None, round_number=None, match_date=None, venue=None):
+        """
+        Predict the outcome of a match without updating ratings
+        
+        Parameters:
+        -----------
+        home_team: str
+            Name of home team
+        away_team: str
+            Name of away team
+        match_id: int
+            Optional match ID for tracking
+        year: int
+            Season year
+        round_number: str
+            Optional round number for tracking
+        match_date: str
+            Optional match date for tracking
+        venue: str
+            Optional venue for tracking
             
         Returns:
         --------
@@ -82,372 +248,156 @@ class AFLEloPredictor:
             print(f"Warning: {away_team} not found in ratings, using base rating")
             self.team_ratings[away_team] = self.base_rating
         
+        # Get current ratings
+        home_rating = self.team_ratings[home_team]
+        away_rating = self.team_ratings[away_team]
+        
         # Calculate win probability
         home_win_prob = self.calculate_win_probability(home_team, away_team)
         
         # Create prediction result
         prediction = {
+            'match_id': match_id,
+            'round_number': round_number,
+            'match_date': match_date,
+            'venue': venue,
+            'year': year,
             'home_team': home_team,
             'away_team': away_team,
+            'pre_match_home_rating': home_rating,
+            'pre_match_away_rating': away_rating,
+            'rating_difference': home_rating - away_rating,
+            'adjusted_rating_difference': (home_rating + self.home_advantage) - away_rating,
             'home_win_probability': home_win_prob,
             'away_win_probability': 1 - home_win_prob,
             'predicted_winner': home_team if home_win_prob > 0.5 else away_team,
             'confidence': max(home_win_prob, 1 - home_win_prob)
         }
         
-        # Include ratings if requested
-        if include_ratings:
-            prediction['home_rating'] = self.team_ratings[home_team]
-            prediction['away_rating'] = self.team_ratings[away_team]
-            prediction['rating_difference'] = self.team_ratings[home_team] - self.team_ratings[away_team]
-            prediction['adjusted_rating_difference'] = (self.team_ratings[home_team] + self.home_advantage) - self.team_ratings[away_team]
+        # Store the prediction
+        self.predictions.append(prediction)
         
         return prediction
+    
+    def save_predictions_to_csv(self, filename):
+        """Save predictions to CSV file"""
+        if not self.predictions:
+            print("No predictions to save")
+            return
+        
+        # Convert predictions to DataFrame
+        df = pd.DataFrame(self.predictions)
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
+        
+        # Save to CSV
+        df.to_csv(filename, index=False)
+        print(f"Saved {len(df)} predictions to {filename}")
+    
+    def save_rating_history_to_csv(self, filename):
+        """Save rating history to CSV file"""
+        if not self.rating_history:
+            print("No rating history to save")
+            return
+        
+        # Convert to DataFrame
+        df = pd.DataFrame()
+        
+        # Process each event
+        for event in self.rating_history:
+            event_type = event['event']
+            
+            if event_type == 'match':
+                # For match events, add a row for each team
+                home_row = {
+                    'event': 'match',
+                    'match_id': event['match_id'],
+                    'date': event['match_date'],
+                    'year': event['year'],
+                    'round': event['round_number'],
+                    'team': event['home_team'],
+                    'opponent': event['away_team'],
+                    'score': event['home_score'],
+                    'opponent_score': event['away_score'],
+                    'result': 'win' if event['home_score'] > event['away_score'] else 
+                             ('loss' if event['home_score'] < event['away_score'] else 'draw'),
+                    'rating_before': event['home_rating_before'],
+                    'rating_after': event['home_rating_after'],
+                    'rating_change': event['rating_change']
+                }
+                
+                away_row = {
+                    'event': 'match',
+                    'match_id': event['match_id'],
+                    'date': event['match_date'],
+                    'year': event['year'],
+                    'round': event['round_number'],
+                    'team': event['away_team'],
+                    'opponent': event['home_team'],
+                    'score': event['away_score'],
+                    'opponent_score': event['home_score'],
+                    'result': 'win' if event['away_score'] > event['home_score'] else 
+                             ('loss' if event['away_score'] < event['home_score'] else 'draw'),
+                    'rating_before': event['away_rating_before'],
+                    'rating_after': event['away_rating_after'],
+                    'rating_change': -event['rating_change']
+                }
+                
+                df = pd.concat([df, pd.DataFrame([home_row, away_row])], ignore_index=True)
+                
+            elif event_type == 'season_carryover':
+                # For season carryover, add a row for each team
+                for team, rating_before in event['ratings_before'].items():
+                    rating_after = event['ratings_after'][team]
+                    
+                    carryover_row = {
+                        'event': 'season_carryover',
+                        'date': None,
+                        'year': event['year'],
+                        'round': None,
+                        'team': team,
+                        'opponent': None,
+                        'rating_before': rating_before,
+                        'rating_after': rating_after,
+                        'rating_change': rating_after - rating_before
+                    }
+                    
+                    df = pd.concat([df, pd.DataFrame([carryover_row])], ignore_index=True)
+        
+        # Sort by date and match_id
+        if 'date' in df.columns and not df['date'].isna().all():
+            df = df.sort_values(['date', 'match_id'])
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
+        
+        # Save to CSV
+        df.to_csv(filename, index=False)
+        print(f"Saved rating history with {len(df)} records to {filename}")
 
 
-def fetch_matches_without_predictions(db_path, force_update=False):
+def fetch_matches(db_path, start_year):
     """
-    Fetch AFL matches without predictions from the database
+    Fetch AFL matches from the database starting from a specific year
     
     Parameters:
     -----------
     db_path: str
         Path to SQLite database
-    force_update: bool
-        If True, fetch all matches even if they already have predictions
+    start_year: int
+        Year to start predictions from
         
     Returns:
     --------
-    pandas DataFrame with matches that don't have predictions
+    pandas DataFrame with matches
     """
     conn = sqlite3.connect(db_path)
     
-    # First check if the elo_predictions table exists
-    cursor = conn.cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='elo_predictions'")
-    table_exists = cursor.fetchone() is not None
-    
-    if not table_exists:
-        # If the table doesn't exist, create it first
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS elo_predictions (
-            prediction_id INTEGER PRIMARY KEY,
-            match_id INTEGER,
-            prediction_time TEXT,
-            home_win_probability REAL,
-            away_win_probability REAL,
-            predicted_winner TEXT,
-            confidence REAL,
-            home_rating REAL,
-            away_rating REAL,
-            rating_difference REAL,
-            adjusted_rating_difference REAL,
-            FOREIGN KEY (match_id) REFERENCES matches (match_id)
-        )
-        """)
-        conn.commit()
-    
-    # Get the current year
-    current_year_query = "SELECT MAX(year) FROM matches"
-    cursor.execute(current_year_query)
-    current_year_result = cursor.fetchone()
-    current_year = current_year_result[0] if current_year_result and current_year_result[0] else datetime.now().year
-    
-    # Define the query based on force_update parameter
-    if force_update:
-        # Fetch all matches
-        query = """
-        SELECT 
-            m.match_id, m.match_number, m.round_number, m.match_date, 
-            m.venue, m.year, m.hscore, m.ascore,
-            ht.name as home_team, at.name as away_team
-        FROM 
-            matches m
-        JOIN 
-            teams ht ON m.home_team_id = ht.team_id
-        JOIN 
-            teams at ON m.away_team_id = at.team_id
-        ORDER BY 
-            m.year, m.match_date
-        """
-    else:
-        # Only fetch matches from the current year that don't have predictions
-        # or matches from any year without predictions
-        query = """
-        SELECT 
-            m.match_id, m.match_number, m.round_number, m.match_date, 
-            m.venue, m.year, m.hscore, m.ascore,
-            ht.name as home_team, at.name as away_team
-        FROM 
-            matches m
-        JOIN 
-            teams ht ON m.home_team_id = ht.team_id
-        JOIN 
-            teams at ON m.away_team_id = at.team_id
-        WHERE 
-            (m.year = ? OR m.match_id NOT IN (SELECT match_id FROM elo_predictions))
-        ORDER BY 
-            m.year, m.match_date
-        """
-    
-    # Execute the query with parameters if needed
-    if force_update:
-        df = pd.read_sql_query(query, conn)
-    else:
-        df = pd.read_sql_query(query, conn, params=(current_year,))
-    
-    # Print some debugging information
-    print(f"Found {len(df)} matches to process")
-    if len(df) > 0:
-        min_year = df['year'].min()
-        max_year = df['year'].max()
-        print(f"Year range: {min_year} to {max_year}")
-        
-        # Count by year
-        year_counts = df['year'].value_counts().sort_index()
-        for year, count in year_counts.items():
-            print(f"  {year}: {count} matches")
-    
-    conn.close()
-    
-    return df
-
-
-def predict_matches_without_predictions(db_path, model_path='afl_elo_model.json', force_update=False):
-    """
-    Make predictions for matches without existing predictions
-    
-    Parameters:
-    -----------
-    db_path: str
-        Path to SQLite database
-    model_path: str
-        Path to the saved ELO model
-        
-    Returns:
-    --------
-    pandas DataFrame with predictions
-    """
-    # Load the predictor
-    predictor = AFLEloPredictor(model_path)
-    
-    # Get matches without predictions
-    matches = fetch_matches_without_predictions(db_path, force_update)
-    
-    if len(matches) == 0:
-        print("No matches without predictions found")
-        return pd.DataFrame()
-    
-    print(f"Found {len(matches)} matches without predictions")
-    
-    # Make predictions
-    all_predictions = []
-    
-    for _, match in matches.iterrows():
-        prediction = predictor.predict_match(
-            home_team=match['home_team'],
-            away_team=match['away_team'],
-            include_ratings=True
-        )
-        
-        # Add match details
-        prediction['match_id'] = match['match_id']
-        prediction['match_number'] = match['match_number']
-        prediction['round_number'] = match['round_number']
-        prediction['match_date'] = match['match_date']
-        prediction['venue'] = match['venue']
-        prediction['year'] = match['year']
-        
-        # Add score details if available
-        if pd.notna(match['hscore']) and pd.notna(match['ascore']):
-            prediction['hscore'] = match['hscore']
-            prediction['ascore'] = match['ascore']
-            
-            # Determine actual result
-            if match['hscore'] > match['ascore']:
-                prediction['actual_result'] = 'home_win'
-                prediction['actual_probability'] = 1.0
-            elif match['hscore'] < match['ascore']:
-                prediction['actual_result'] = 'away_win'
-                prediction['actual_probability'] = 0.0
-            else:
-                prediction['actual_result'] = 'draw'
-                prediction['actual_probability'] = 0.5
-            
-            # Check if prediction was correct
-            prediction['correct'] = prediction['predicted_winner'] == prediction['actual_result']
-            
-            # Format the display
-            prediction['result'] = f"{int(match['hscore'])}-{int(match['ascore'])}"
-        
-        all_predictions.append(prediction)
-    
-    # Convert predictions to DataFrame
-    predictions_df = pd.DataFrame(all_predictions)
-    
-    # Format the DataFrame for display
-    if len(predictions_df) > 0:
-        # Format probabilities as percentages
-        predictions_df['home_win_probability'] = predictions_df['home_win_probability'].apply(lambda x: f"{x:.1%}")
-        predictions_df['away_win_probability'] = predictions_df['away_win_probability'].apply(lambda x: f"{x:.1%}")
-        predictions_df['confidence'] = predictions_df['confidence'].apply(lambda x: f"{x:.1%}")
-        
-        # Format ratings to 1 decimal place
-        if 'home_rating' in predictions_df.columns:
-            predictions_df['home_rating'] = predictions_df['home_rating'].apply(lambda x: f"{x:.1f}")
-            predictions_df['away_rating'] = predictions_df['away_rating'].apply(lambda x: f"{x:.1f}")
-            predictions_df['rating_difference'] = predictions_df['rating_difference'].apply(lambda x: f"{x:.1f}")
-            predictions_df['adjusted_rating_difference'] = predictions_df['adjusted_rating_difference'].apply(lambda x: f"{x:.1f}")
-    
-    return predictions_df
-
-
-def save_predictions_to_database(predictions_df, db_path):
-    """
-    Save predictions to the database
-    
-    Parameters:
-    -----------
-    predictions_df: pandas DataFrame
-        DataFrame containing predictions
-    db_path: str
-        Path to SQLite database
-    """
-    if len(predictions_df) == 0:
-        print("No predictions to save")
-        return
-    
-    # Convert percentage strings back to floats for database storage
-    predictions_df_copy = predictions_df.copy()
-    
-    # Convert percentage strings back to floats
-    for col in ['home_win_probability', 'away_win_probability', 'confidence']:
-        if col in predictions_df_copy.columns:
-            predictions_df_copy[col] = predictions_df_copy[col].str.rstrip('%').astype('float') / 100
-    
-    # Convert rating strings back to floats
-    for col in ['home_rating', 'away_rating', 'rating_difference', 'adjusted_rating_difference']:
-        if col in predictions_df_copy.columns:
-            predictions_df_copy[col] = predictions_df_copy[col].astype('float')
-    
-    # Connect to database
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    # Check if elo_predictions table exists, create if not
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS elo_predictions (
-        prediction_id INTEGER PRIMARY KEY,
-        match_id INTEGER,
-        prediction_time TEXT,
-        home_win_probability REAL,
-        away_win_probability REAL,
-        predicted_winner TEXT,
-        confidence REAL,
-        home_rating REAL,
-        away_rating REAL,
-        rating_difference REAL,
-        adjusted_rating_difference REAL,
-        FOREIGN KEY (match_id) REFERENCES matches (match_id)
-    )
-    """)
-    
-    # Get current timestamp
-    prediction_time = datetime.now().isoformat()
-    
-    # Insert predictions
-    for _, row in predictions_df_copy.iterrows():
-        # Check if prediction already exists for this match
-        cursor.execute(
-            "SELECT prediction_id FROM elo_predictions WHERE match_id = ?", 
-            (row['match_id'],)
-        )
-        existing = cursor.fetchone()
-        
-        if existing:
-            # Update existing prediction
-            cursor.execute("""
-            UPDATE elo_predictions
-            SET prediction_time = ?,
-                home_win_probability = ?,
-                away_win_probability = ?,
-                predicted_winner = ?,
-                confidence = ?,
-                home_rating = ?,
-                away_rating = ?,
-                rating_difference = ?,
-                adjusted_rating_difference = ?
-            WHERE match_id = ?
-            """, (
-                prediction_time,
-                row['home_win_probability'],
-                row['away_win_probability'],
-                row['predicted_winner'],
-                row['confidence'],
-                row.get('home_rating', None),
-                row.get('away_rating', None),
-                row.get('rating_difference', None),
-                row.get('adjusted_rating_difference', None),
-                row['match_id']
-            ))
-        else:
-            # Insert new prediction
-            cursor.execute("""
-            INSERT INTO elo_predictions (
-                match_id, prediction_time, home_win_probability, away_win_probability,
-                predicted_winner, confidence, home_rating, away_rating,
-                rating_difference, adjusted_rating_difference
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                row['match_id'],
-                prediction_time,
-                row['home_win_probability'],
-                row['away_win_probability'],
-                row['predicted_winner'],
-                row['confidence'],
-                row.get('home_rating', None),
-                row.get('away_rating', None),
-                row.get('rating_difference', None),
-                row.get('adjusted_rating_difference', None)
-            ))
-    
-    # Commit changes and close connection
-    conn.commit()
-    conn.close()
-    
-    print(f"Saved {len(predictions_df)} predictions to database")
-
-
-def update_ratings_with_results(db_path, model_path='afl_elo_model.json', save_updated_model=True):
-    """
-    Update ELO ratings with recent match results
-    
-    Parameters:
-    -----------
-    db_path: str
-        Path to SQLite database
-    model_path: str
-        Path to the saved ELO model
-    save_updated_model: bool
-        Whether to save the updated model
-        
-    Returns:
-    --------
-    Updated AFLEloPredictor object
-    """
-    # Load the predictor with current ratings
-    predictor = AFLEloPredictor(model_path)
-    
-    # Connect to database
-    conn = sqlite3.connect(db_path)
-    
-    # Get completed matches that might not be in the model
-    # This gets recent matches with scores that are completed (based on complete = 100)
-    query = """
+    query = f"""
     SELECT 
         m.match_id, m.match_number, m.round_number, m.match_date, 
-        m.year, m.hscore, m.ascore, m.complete,
+        m.venue, m.year, m.hscore, m.ascore, 
         ht.name as home_team, at.name as away_team
     FROM 
         matches m
@@ -456,348 +406,157 @@ def update_ratings_with_results(db_path, model_path='afl_elo_model.json', save_u
     JOIN 
         teams at ON m.away_team_id = at.team_id
     WHERE 
-        m.hscore IS NOT NULL AND m.ascore IS NOT NULL
-        AND m.complete = 100  -- Only include fully completed matches
+        m.year >= ?
     ORDER BY 
-        m.match_date ASC  -- Process in chronological order
-    """ 
+        m.year, m.match_date
+    """
     
-    recent_matches = pd.read_sql_query(query, conn)
+    matches = pd.read_sql_query(query, conn, params=(start_year,))
     conn.close()
     
-    # Create a simple ELO model to update ratings
-    class SimpleEloUpdater:
-        def __init__(self, team_ratings, params):
-            self.team_ratings = team_ratings.copy()  # Copy the ratings
-            # Add debug prints
-            print("Initial team ratings:")
-            for team, rating in sorted(self.team_ratings.items(), key=lambda x: x[1], reverse=True)[:5]:
-                print(f"  {team}: {rating:.1f}")
-            
-            self.base_rating = params['base_rating']
-            self.k_factor = params['k_factor']
-            self.home_advantage = params['home_advantage']
-            self.margin_factor = params['margin_factor']
-            self.max_margin = params['max_margin']
-            self.updates = []
-        
-        def calculate_win_probability(self, home_team, away_team):
-            """Calculate probability of home team winning"""
-            home_rating = self.team_ratings.get(home_team, self.base_rating)
-            away_rating = self.team_ratings.get(away_team, self.base_rating)
-            
-            # Apply home ground advantage
-            rating_diff = (home_rating + self.home_advantage) - away_rating
-            
-            # Convert rating difference to win probability
-            win_probability = 1.0 / (1.0 + 10 ** (-rating_diff / 400))
-            
-            return win_probability
-        
-        def update_ratings(self, home_team, away_team, hscore, ascore):
-            """Update ratings based on match result"""
-            # Ensure teams exist in ratings
-            if home_team not in self.team_ratings:
-                self.team_ratings[home_team] = self.base_rating
-            if away_team not in self.team_ratings:
-                self.team_ratings[away_team] = self.base_rating
-            
-            # Get current ratings
-            home_rating_before = self.team_ratings[home_team]
-            away_rating_before = self.team_ratings[away_team]
-            
-            # Calculate win probability
-            home_win_prob = self.calculate_win_probability(home_team, away_team)
-            
-            # Determine actual result (1 for home win, 0 for away win, 0.5 for draw)
-            if hscore > ascore:
-                actual_result = 1.0
-            elif hscore < ascore:
-                actual_result = 0.0
-            else:
-                actual_result = 0.5
-            
-            # Calculate rating change based on result and margin
-            margin = hscore - ascore
-            capped_margin = min(abs(margin), self.max_margin) * np.sign(margin)
-            
-            # Adjust K-factor by margin
-            margin_multiplier = 1.0
-            if self.margin_factor > 0:
-                margin_multiplier = np.log1p(abs(capped_margin) * self.margin_factor) / np.log1p(self.max_margin * self.margin_factor)
-            
-            # Calculate ELO update
-            rating_change = self.k_factor * margin_multiplier * (actual_result - home_win_prob)
-            
-            # Update ratings
-            self.team_ratings[home_team] += rating_change
-            self.team_ratings[away_team] -= rating_change
-            
-            # Store the update
-            self.updates.append({
-                'home_team': home_team,
-                'away_team': away_team,
-                'hscore': hscore,
-                'ascore': ascore,
-                'home_rating_before': home_rating_before,
-                'away_rating_before': away_rating_before,
-                'home_rating_after': self.team_ratings[home_team],
-                'away_rating_after': self.team_ratings[away_team],
-                'rating_change': rating_change
-            })
-            
-            return rating_change
+    # Convert match_date to datetime for sorting
+    matches['match_date'] = pd.to_datetime(matches['match_date'], errors='coerce')
     
-    # Create updater with current ratings
-    updater = SimpleEloUpdater(predictor.team_ratings, predictor.params)
+    # Sort by date to ensure chronological order
+    matches = matches.sort_values(['year', 'match_date'])
     
-    # Apply any matches that need updates
-    updates_applied = 0
-    
-    for _, match in recent_matches.iterrows():
-        # Only update if scores are available
-        if pd.notna(match['hscore']) and pd.notna(match['ascore']):
-            # Update ratings
-            rating_change = updater.update_ratings(
-                home_team=match['home_team'],
-                away_team=match['away_team'],
-                hscore=match['hscore'],
-                ascore=match['ascore']
-            )
-            
-            if abs(rating_change) > 0:
-                updates_applied += 1
-    
-    print(f"Applied {updates_applied} rating updates from recent matches")
+    return matches
 
-    # Add debug print to show final ratings
-    print(f"\nFinal team ratings after {updates_applied} updates:")
-    for team, rating in sorted(updater.team_ratings.items(), key=lambda x: x[1], reverse=True)[:5]:
-        print(f"  {team}: {rating:.1f}")
-    
-    # If no updates were applied, return the original predictor
-    if updates_applied == 0:
-        print("No rating updates needed")
-        return predictor
-    
-    # Update the predictor with new ratings
-    predictor.team_ratings = updater.team_ratings
-    
-    # Save updated model if requested
-    if save_updated_model:
-        # Create model data
-        model_data = {
-            'parameters': predictor.params,
-            'team_ratings': predictor.team_ratings
-        }
-        
-        # Save to file
-        with open(model_path, 'w') as f:
-            json.dump(model_data, f, indent=4)
-        
-        print(f"Saved updated model to {model_path}")
-    
-    # Return the updated predictor
-    return predictor
 
-def analyze_prediction_accuracy(predictions_df, completed_matches, output_prefix="elo"):
+def predict_matches(model_path, db_path, start_year, output_dir='.'):
     """
-    Analyze the accuracy of ELO predictions
+    Make predictions for matches starting from specified year
     
     Parameters:
     -----------
-    predictions_df: pandas DataFrame
-        DataFrame containing predictions
-    completed_matches: pandas DataFrame
-        DataFrame containing completed matches with results
-    output_prefix: str
-        Prefix for output files
+    model_path: str
+        Path to the saved ELO model
+    db_path: str
+        Path to SQLite database
+    start_year: int
+        Year to start predictions from
+    output_dir: str
+        Directory to save output files
         
     Returns:
     --------
-    dict with accuracy metrics
+    None
     """
-    print("\nAnalyzing prediction accuracy...")
+    # Load the predictor
+    predictor = AFLEloPredictor(model_path)
     
-    if len(predictions_df) == 0 or len(completed_matches) == 0:
-        print("No predictions or completed matches to analyze")
-        return {}
+    # Get matches from database
+    matches = fetch_matches(db_path, start_year)
     
-    # Merge predictions with actual results
-    analysis_df = predictions_df.copy()
+    if len(matches) == 0:
+        print(f"No matches found from year {start_year} onwards")
+        return
     
-    # Add columns for result analysis
-    analysis_df['actual_result'] = None
-    analysis_df['correct_prediction'] = False
-    analysis_df['brier_score'] = None
-    analysis_df['bits_score'] = None
+    # Get the years in the dataset
+    years = matches['year'].unique()
+    years.sort()
     
-    # Process each prediction
-    for idx, pred in analysis_df.iterrows():
-        match_id = pred['match_id']
-        match = completed_matches[completed_matches['match_id'] == match_id]
+    print(f"Found {len(matches)} matches from {years.min()} to {years.max()}")
+    
+    # Track the current year to detect year changes
+    current_year = None
+    
+    # Process matches in chronological order
+    for i, match in matches.iterrows():
+        match_year = match['year']
         
-        if len(match) == 0 or pd.isna(match['hscore'].values[0]) or pd.isna(match['ascore'].values[0]):
-            continue
+        # Apply season carryover at the start of a new season
+        if current_year is not None and match_year != current_year:
+            predictor.apply_season_carryover(match_year)
         
-        # Get scores
-        hscore = match['hscore'].values[0]
-        ascore = match['ascore'].values[0]
+        current_year = match_year
         
-        # Determine actual result
-        if hscore > ascore:
-            actual_result = 'home_win'
-            actual_probability = 1.0
-        elif hscore < ascore:
-            actual_result = 'away_win'
-            actual_probability = 0.0
+        # Determine if match has scores (completed)
+        has_scores = not pd.isna(match['hscore']) and not pd.isna(match['ascore'])
+        
+        if has_scores:
+            # For completed matches, update ratings
+            predictor.update_ratings(
+                home_team=match['home_team'],
+                away_team=match['away_team'],
+                hscore=match['hscore'],
+                ascore=match['ascore'],
+                match_id=match['match_id'],
+                year=match['year'],
+                round_number=match['round_number'],
+                match_date=match['match_date'].isoformat() if pd.notna(match['match_date']) else None,
+                venue=match['venue']
+            )
         else:
-            actual_result = 'draw'
-            actual_probability = 0.5
+            # For future matches, just predict without updating
+            predictor.predict_match(
+                home_team=match['home_team'],
+                away_team=match['away_team'],
+                match_id=match['match_id'],
+                year=match['year'],
+                round_number=match['round_number'],
+                match_date=match['match_date'].isoformat() if pd.notna(match['match_date']) else None,
+                venue=match['venue']
+            )
+    
+    # Save predictions and rating history
+    os.makedirs(output_dir, exist_ok=True)
+    
+    predictions_file = os.path.join(output_dir, f"afl_elo_predictions_from_{start_year}.csv")
+    history_file = os.path.join(output_dir, f"afl_elo_rating_history_from_{start_year}.csv")
+    
+    predictor.save_predictions_to_csv(predictions_file)
+    predictor.save_rating_history_to_csv(history_file)
+    
+    # Evaluate the model on completed matches
+    completed_predictions = [p for p in predictor.predictions if 'actual_result' in p]
+    
+    if completed_predictions:
+        correct_count = sum(1 for p in completed_predictions if p.get('correct', False))
+        accuracy = correct_count / len(completed_predictions)
         
-        analysis_df.at[idx, 'actual_result'] = actual_result
-        
-        # Extract probability from percentage string
-        home_win_prob_str = pred['home_win_probability']
-        try:
-            if isinstance(home_win_prob_str, str) and '%' in home_win_prob_str:
-                home_win_prob = float(home_win_prob_str.strip('%')) / 100
-            else:
-                home_win_prob = float(home_win_prob_str)
-        except:
-            print(f"Warning: Could not convert probability {home_win_prob_str} for match {match_id}")
-            continue
-        
-        # Check if prediction was correct
-        predicted_winner = pred['predicted_winner']
-        analysis_df.at[idx, 'correct_prediction'] = (predicted_winner == actual_result)
-        
-        # Calculate Brier score
-        brier = (home_win_prob - actual_probability) ** 2
-        analysis_df.at[idx, 'brier_score'] = brier
-        
-        # Calculate Bits score
-        p = max(min(home_win_prob, 0.999), 0.001)
-        if actual_probability == 1.0:
-            bits = np.log2(p)
-        elif actual_probability == 0.0:
-            bits = np.log2(1 - p)
-        else:  # Draw
-            bits = np.log2(1 - abs(0.5 - p))
-        analysis_df.at[idx, 'bits_score'] = bits
+        print(f"\nPrediction Accuracy on {len(completed_predictions)} completed matches: {accuracy:.4f}")
+    else:
+        print("\nNo completed matches found to evaluate prediction accuracy")
     
-    # Filter to only completed matches
-    completed_analysis = analysis_df[analysis_df['actual_result'].notna()].copy()
-    
-    if len(completed_analysis) == 0:
-        print("No completed matches with predictions to analyze")
-        return {}
-    
-    # Group by round and calculate metrics
-    if 'round_number' in completed_analysis.columns:
-        round_stats = completed_analysis.groupby('round_number').agg(
-            matches=('match_id', 'count'),
-            accuracy=('correct_prediction', 'mean'),
-            avg_brier=('brier_score', 'mean'),
-            avg_bits=('bits_score', 'mean')
-        ).reset_index()
-        
-        # Print results by round
-        print("\nPrediction Accuracy by Round:")
-        for _, row in round_stats.iterrows():
-            print(f"Round {row['round_number']}: "
-                f"Accuracy = {row['accuracy']:.1%}, "
-                f"Brier = {row['avg_brier']:.4f}, "
-                f"Bits = {row['avg_bits']:.4f} "
-                f"({row['matches']} matches)")
-    
-    # Calculate overall metrics
-    overall_accuracy = completed_analysis['correct_prediction'].mean()
-    overall_brier = completed_analysis['brier_score'].mean()
-    overall_bits = completed_analysis['bits_score'].mean()
-    total_matches = len(completed_analysis)
-    
-    print(f"\nOverall Metrics ({total_matches} matches):")
-    print(f"Accuracy: {overall_accuracy:.1%}")
-    print(f"Brier Score: {overall_brier:.4f} (lower is better)")
-    print(f"Bits Score: {overall_bits:.4f} (higher is better)")
-    
-    # Save detailed results to CSV
-    output_file = f'{output_prefix}_prediction_analysis.csv'
-    completed_analysis.to_csv(output_file, index=False)
-    print(f"\nDetailed prediction analysis saved to {output_file}")
-    
-    return {
-        'accuracy': overall_accuracy,
-        'brier_score': overall_brier,
-        'bits_score': overall_bits,
-        'total_matches': total_matches,
-        'round_stats': round_stats if 'round_number' in completed_analysis.columns else None
-    }
+    # Display final team ratings
+    print("\nFinal Team Ratings:")
+    sorted_ratings = sorted(predictor.team_ratings.items(), key=lambda x: x[1], reverse=True)
+    for team, rating in sorted_ratings:
+        print(f"  {team}: {rating:.1f}")
+
 
 def main():
-    """Main function to run predictions"""
+    """Main function to make ELO predictions"""
+    parser = argparse.ArgumentParser(description='Make AFL ELO predictions')
+    parser.add_argument('--start-year', type=int, required=True,
+                        help='Start year for predictions (inclusive)')
+    parser.add_argument('--model-path', type=str, required=True,
+                        help='Path to the trained ELO model JSON file')
+    parser.add_argument('--db-path', type=str, default='../data/afl_predictions.db',
+                        help='Path to the SQLite database')
+    parser.add_argument('--output-dir', type=str, default='.',
+                        help='Directory to save output files')
+    
+    args = parser.parse_args()
+    
     print("AFL ELO Model Predictions")
     print("========================")
-    
-    # Set database path
-    db_path = '../data/afl_predictions.db'
-    model_path = 'afl_elo_model.json'
+    print(f"Making predictions for matches from year {args.start_year} onwards")
+    print(f"Using model: {args.model_path}")
     
     # Check if files exist
-    if not os.path.exists(db_path):
-        print(f"Error: Database not found at {db_path}")
+    if not os.path.exists(args.db_path):
+        print(f"Error: Database not found at {args.db_path}")
         return
     
-    if not os.path.exists(model_path):
-        print(f"Error: Model file not found at {model_path}")
-        print("Please run the training script first to generate the model")
+    if not os.path.exists(args.model_path):
+        print(f"Error: Model file not found at {args.model_path}")
         return
     
-    # Update ratings with recent results
-    print("Updating ratings with recent match results...")
-    updated_predictor = update_ratings_with_results(db_path, model_path, save_updated_model=True)
+    # Make predictions
+    predict_matches(args.model_path, args.db_path, args.start_year, args.output_dir)
 
-    # Make predictions for matches without predictions
-    # Change this to True if you want to force updates for all matches
-    force_update = False
-    print("\nMaking predictions for matches " + ("including existing predictions..." if force_update else "without existing predictions..."))
-    predictions = predict_matches_without_predictions(db_path, model_path, force_update=force_update)
-    
-    if len(predictions) == 0:
-        print("No matches to predict")
-    else:
-        # Display predictions
-        print("\nPredictions for matches:")
-        pd.set_option('display.max_columns', None)
-        pd.set_option('display.width', 120)
-        display_cols = ['round_number', 'match_date', 'home_team', 'away_team']
-        
-        # Add result columns if available
-        if 'result' in predictions.columns:
-            display_cols.append('result')
-        
-        display_cols.extend(['home_win_probability', 'away_win_probability', 'predicted_winner', 'confidence'])
-        
-        # Add accuracy columns if available
-        if 'correct' in predictions.columns:
-            display_cols.append('correct')
-        
-        print(predictions[display_cols].to_string(index=False))
-        
-        # Calculate accuracy if results are available
-        if 'correct' in predictions.columns:
-            accuracy = predictions['correct'].mean() if len(predictions) > 0 else 0
-            print(f"\nOverall accuracy: {accuracy:.1%}")
-        
-        # Save predictions to database
-        print("\nSaving predictions to database...")
-        save_predictions_to_database(predictions, db_path)
-        
-        # Create prediction output as CSV
-        output_file = 'elo_predictions.csv'
-        predictions.to_csv(output_file, index=False)
-        print(f"Predictions saved to {output_file}")
 
 if __name__ == "__main__":
     main()
