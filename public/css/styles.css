@@ -499,6 +499,11 @@ textarea {
   color: var(--light-text);
 }
 
+.admin-metrics-display {
+  text-align: center;
+  margin-top: 10px; /* Optional: adds some space above the metrics */
+}
+
 /* Stats Page */
 .stats-container {
   display: grid;

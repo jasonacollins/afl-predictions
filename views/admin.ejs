@@ -279,9 +279,16 @@
     }
     
     // Show clearing state
+    const originalButtonText = button.textContent;
     button.textContent = 'Clearing...';
     button.disabled = true;
     
+    // Find inputs to clear them later
+    const matchCardForClear = button.closest('.match-card');
+    const input = matchCardForClear ? matchCardForClear.querySelector(`.home-prediction[data-match-id="${matchId}"]`) : null;
+    const awayInput = matchCardForClear ? matchCardForClear.querySelector(`.away-prediction[data-match-id="${matchId}"]`) : null;
+
+
     // Make the API call to clear the prediction
     fetch(`/admin/predictions/${userId}/save`, {
       method: 'POST',
@@ -297,32 +304,35 @@
     .then(data => {
       if (data.success) {
         // Find and clear the inputs
-        const input = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
-        const awayInput = document.querySelector(`.away-prediction[data-match-id="${matchId}"]`);
-        
         if (input) input.value = '';
         if (awayInput) awayInput.value = '';
         
         button.textContent = 'Prediction Cleared';
         setTimeout(() => {
-          button.textContent = 'Save Prediction';
+          button.textContent = 'Save Prediction'; // Reset to default text
           button.classList.remove('saved-state', 'update-state', 'delete-state');
           button.disabled = false;
         }, 1500);
         
         // Remove from stored predictions
-        if (window.userPredictions && window.userPredictions[matchId] !== undefined) {
-          delete window.userPredictions[matchId];
-        }
+        updateStoredPrediction(matchId, null, null); // Use updateStoredPrediction for consistency
         
         // Update data-original-value attribute on input
         if (input) {
           input.dataset.originalValue = '';
         }
+
+        // Clear metrics display
+        if (matchCardForClear) {
+          const metricsContainer = matchCardForClear.querySelector('.admin-metrics-display');
+          if (metricsContainer) {
+            metricsContainer.innerHTML = '';
+          }
+        }
       } else {
         button.textContent = data.error || 'Error!';
         setTimeout(() => {
-          button.textContent = 'Save Prediction';
+          button.textContent = originalButtonText; // Revert to original text on error
           button.disabled = false;
         }, 1500);
       }
@@ -331,7 +341,7 @@
       console.error('Error clearing prediction:', error);
       button.textContent = 'Failed!';
       setTimeout(() => {
-        button.textContent = 'Save Prediction';
+        button.textContent = originalButtonText; // Revert to original text on failure
         button.disabled = false;
       }, 1500);
     });
@@ -360,8 +370,8 @@
   // Override save prediction for admin
   document.addEventListener('DOMContentLoaded', function() {
     // Override the savePrediction function when used in admin context
-    window.savePredictionOriginal = window.savePrediction;
-    window.savePrediction = function(matchId, probability, button) {
+    window.savePredictionOriginal = window.savePrediction; // Keep a reference if needed elsewhere
+    window.savePrediction = function(matchId, probability, button) { // probability is string from input
       const userId = document.getElementById('selected-user-id').value;
       
       if (!userId) {
@@ -387,27 +397,51 @@
         },
         body: JSON.stringify({
           matchId: matchId,
-          probability: probability
+          probability: probability // Send string probability to backend
         }),
       })
       .then(response => response.json())
       .then(data => {
         if (data.success) {
-          button.textContent = 'Saved!';
+          button.textContent = 'Saved'; // Changed from 'Saved!' then 'Saved' to just 'Saved'
+          button.classList.add('saved-state');
+          button.classList.remove('update-state', 'delete-state');
+          // Enable button after a short delay
           setTimeout(() => {
-            button.textContent = 'Saved';
-            button.classList.add('saved-state');
-            button.classList.remove('update-state', 'delete-state');
             button.disabled = false;
-          }, 1500);
+          }, 500);
           
-          // Update stored prediction
-          updateStoredPrediction(matchId, probability);
+          const numericProb = parseInt(probability); // numericProb will be number
+          let tippedTeamForStorageAndMetrics = button.dataset.tippedTeam;
+
+          if (numericProb !== 50) {
+            tippedTeamForStorageAndMetrics = undefined;
+          } else if (!tippedTeamForStorageAndMetrics && numericProb === 50) {
+            tippedTeamForStorageAndMetrics = 'home'; // Default if 50 and not set
+          }
           
-          // Update data-original-value attribute on input
+          updateStoredPrediction(matchId, numericProb, tippedTeamForStorageAndMetrics);
+          
           const input = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
           if (input) {
-            input.dataset.originalValue = probability;
+            input.dataset.originalValue = probability; // Store string form
+          }
+
+          // Update the metrics display
+          const matchCard = button.closest('.match-card');
+          if (matchCard) {
+            const metricsContainer = matchCard.querySelector('.admin-metrics-display');
+            const matchData = getMatchDataById(matchId);
+
+            if (metricsContainer && matchData && matchData.hscore !== null && matchData.ascore !== null) {
+              if (probability === "" || probability === null) { // Prediction cleared
+                  metricsContainer.innerHTML = '';
+              } else {
+                  metricsContainer.innerHTML = calculateAccuracy(matchData, numericProb, tippedTeamForStorageAndMetrics);
+              }
+            } else if (metricsContainer) {
+              metricsContainer.innerHTML = ''; 
+            }
           }
         } else {
           button.textContent = data.error || 'Error!';
@@ -436,21 +470,24 @@
       // Check if there's already a clear button
       if (card.querySelector('.clear-prediction')) return;
       
-      const matchId = card.querySelector('.home-prediction')?.dataset?.matchId;
+      const homePredictionInput = card.querySelector('.home-prediction');
+      const matchId = homePredictionInput?.dataset?.matchId;
+
       if (matchId) {
         const predictionControls = card.querySelector('.prediction-controls');
-        if (predictionControls) {
+        if (predictionControls && !card.querySelector('.clear-prediction')) { // Ensure not to add multiple
           // Create a clear button
           const clearButton = document.createElement('button');
-          clearButton.className = 'clear-prediction';
+          clearButton.className = 'button secondary-button clear-prediction'; // Added button classes
           clearButton.textContent = 'Clear';
           clearButton.dataset.matchId = matchId;
+          clearButton.style.marginLeft = '10px'; // Add some spacing
           
           // Add click handler with direct API call
           clearButton.addEventListener('click', function(e) {
-            e.preventDefault(); // Prevent default form submission
+            e.preventDefault(); 
             
-            const matchId = this.dataset.matchId;
+            const currentMatchId = this.dataset.matchId;
             const userId = document.getElementById('selected-user-id').value;
             
             if (!userId) {
@@ -458,14 +495,16 @@
               return;
             }
             
-            const card = this.closest('.match-card');
-            const input = card.querySelector('.home-prediction');
-            const awayInput = card.querySelector('.away-prediction');
-            const saveButton = card.querySelector('.save-prediction');
-            
-            // Show clearing state
+            const currentCard = this.closest('.match-card');
+            const input = currentCard.querySelector('.home-prediction');
+            const awayInput = currentCard.querySelector('.away-prediction');
+            const saveButton = currentCard.querySelector('.save-prediction');
+            const originalSaveButtonText = saveButton.textContent;
+
+            // Show clearing state on save button
             saveButton.textContent = 'Clearing...';
             saveButton.disabled = true;
+            this.disabled = true; // Disable clear button too
             
             // Direct API call
             fetch(`/admin/predictions/${userId}/save`, {
@@ -474,15 +513,14 @@
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                matchId: matchId,
-                probability: null  // Use null instead of empty string
+                matchId: currentMatchId,
+                probability: ""  // Use empty string for clearing
               }),
             })
             .then(response => response.json())
             .then(data => {
               if (data.success) {
-                // Clear the inputs
-                input.value = '';
+                if (input) input.value = '';
                 if (awayInput) awayInput.value = '';
                 
                 saveButton.textContent = 'Prediction Cleared';
@@ -490,22 +528,27 @@
                   saveButton.textContent = 'Save Prediction';
                   saveButton.classList.remove('saved-state', 'update-state', 'delete-state');
                   saveButton.disabled = false;
+                  this.disabled = false; // Re-enable clear button
                 }, 1500);
                 
-                // Remove from stored predictions
-                if (window.userPredictions && window.userPredictions[matchId] !== undefined) {
-                  delete window.userPredictions[matchId];
-                }
+                updateStoredPrediction(currentMatchId, null, null);
                 
-                // Update data-original-value attribute on input
                 if (input) {
                   input.dataset.originalValue = '';
+                }
+                // Clear metrics display
+                if (currentCard) {
+                    const metricsContainer = currentCard.querySelector('.admin-metrics-display');
+                    if (metricsContainer) {
+                        metricsContainer.innerHTML = '';
+                    }
                 }
               } else {
                 saveButton.textContent = data.error || 'Error!';
                 setTimeout(() => {
-                  saveButton.textContent = 'Save Prediction';
+                  saveButton.textContent = originalSaveButtonText;
                   saveButton.disabled = false;
+                  this.disabled = false; // Re-enable clear button
                 }, 1500);
               }
             })
@@ -513,14 +556,20 @@
               console.error('Error clearing prediction:', error);
               saveButton.textContent = 'Failed!';
               setTimeout(() => {
-                saveButton.textContent = 'Save Prediction';
+                saveButton.textContent = originalSaveButtonText;
                 saveButton.disabled = false;
+                this.disabled = false; // Re-enable clear button
               }, 1500);
             });
           });
           
-          // Append to the controls
-          predictionControls.appendChild(clearButton);
+          // Append to the controls, after the save button
+          const saveBtn = predictionControls.querySelector('.save-prediction');
+          if (saveBtn && saveBtn.parentNode === predictionControls) {
+            saveBtn.insertAdjacentElement('afterend', clearButton);
+          } else {
+            predictionControls.appendChild(clearButton);
+          }
         }
       }
     });

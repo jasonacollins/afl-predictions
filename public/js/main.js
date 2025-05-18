@@ -1,4 +1,6 @@
 // Modified version of public/js/main.js
+let currentMatchesData = []; // Store current matches
+
 document.addEventListener('DOMContentLoaded', function() {
   // Format all existing date elements on the page
   const dateElements = document.querySelectorAll('.match-date');
@@ -60,6 +62,7 @@ function fetchMatchesForRound(round) {
   fetch(`/predictions/round/${round}?year=${year}`)
     .then(response => response.json())
     .then(matches => {
+      currentMatchesData = matches; // Store fetched matches
       renderMatches(matches);
       // Call our new function to update round button states
       updateRoundButtonStates();
@@ -94,14 +97,14 @@ function renderMatches(matches) {
     
     if (window.userPredictions && window.userPredictions[match.match_id]) {
       if (typeof window.userPredictions[match.match_id] === 'object') {
-        prediction = window.userPredictions[match.match_id].probability || '';
+        prediction = window.userPredictions[match.match_id].probability !== null ? String(window.userPredictions[match.match_id].probability) : '';
         tippedTeam = window.userPredictions[match.match_id].tippedTeam || 'home';
       } else {
-        prediction = window.userPredictions[match.match_id] || '';
+        prediction = String(window.userPredictions[match.match_id]) || '';
       }
     }
     
-    const awayPrediction = prediction !== '' ? (100 - prediction) : '';
+    const awayPrediction = prediction !== '' ? (100 - parseInt(prediction)) : '';
     const hasPrediction = prediction !== '';
     
     // Determine button class and text based on whether prediction exists
@@ -171,6 +174,11 @@ function renderMatches(matches) {
                     data-tipped-team="${tippedTeam}">
               ${buttonText}
             </button>
+            ${(window.isAdmin && hasResult && hasPrediction) ? `
+              <div class="admin-metrics-display">
+                ${calculateAccuracy(match, parseInt(prediction), tippedTeam)}
+              </div>
+            ` : ''}
           </div>
         ` : isLocked ? `
           <div class="prediction-locked">
@@ -184,7 +192,7 @@ function renderMatches(matches) {
             `}
             ${!hasResult ? `<p class="locked-message">Match has started - predictions locked</p>` : ''}
             ${hasResult ? `
-              ${hasPrediction ? calculateAccuracy(match, prediction, tippedTeam) : ''}
+              ${hasPrediction ? calculateAccuracy(match, parseInt(prediction), tippedTeam) : ''}
             ` : ''}
           </div>
         ` : ''}
@@ -197,7 +205,7 @@ function renderMatches(matches) {
   // Re-initialize event listeners for new elements
   initPredictionInputs();
   initSavePredictionButtons();
-  }
+}
 
 // Calculate prediction accuracy text
 function calculateAccuracy(match, prediction, tippedTeam) {
@@ -583,10 +591,26 @@ function updateStoredPrediction(matchId, value, tippedTeam) {
   if (!window.userPredictions) {
     window.userPredictions = {};
   }
-  window.userPredictions[matchId] = {
-    probability: parseInt(value),
-    tippedTeam: tippedTeam
-  };
+  // Ensure value is an integer for probability, or null if clearing
+  const probabilityValue = (value === "" || value === null || value === undefined || isNaN(parseInt(value))) ? null : parseInt(value);
+
+  if (probabilityValue === null) {
+      // If clearing prediction, remove the entry
+      if (window.userPredictions[matchId]) {
+          delete window.userPredictions[matchId];
+      }
+  } else {
+      window.userPredictions[matchId] = {
+        probability: probabilityValue,
+        tippedTeam: tippedTeam
+      };
+  }
+}
+
+// Helper function to find match data by ID
+function getMatchDataById(matchId) {
+  // Ensure matchId is treated consistently (e.g., as a string if it comes from dataset, or number if from numeric source)
+  return currentMatchesData.find(m => String(m.match_id) === String(matchId));
 }
 
 // Helper for admin user selection

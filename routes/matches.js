@@ -187,7 +187,7 @@ router.get('/stats', catchAsync(async (req, res) => {
     
     // Calculate averages and percentages
     const avgBrierScore = totalPredictions > 0 ? (totalBrierScore / totalPredictions).toFixed(4) : 0;
-    const avgBitsScore = totalPredictions > 0 ? (totalBitsScore / totalPredictions).toFixed(4) : 0;
+    const bitsScoreSum = totalPredictions > 0 ? totalBitsScore.toFixed(4) : 0;
     const tipAccuracy = totalPredictions > 0 ? ((tipPoints / totalPredictions) * 100).toFixed(1) : 0;
     
     predictorStats.push({
@@ -198,7 +198,7 @@ router.get('/stats', catchAsync(async (req, res) => {
       totalPredictions,
       tipAccuracy,
       brierScore: avgBrierScore,
-      bitsScore: avgBitsScore
+      bitsScore: bitsScoreSum
     });
   }
   
