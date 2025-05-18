@@ -91,26 +91,29 @@ function renderMatches(matches) {
     const isLocked = match.isLocked;
     const hasResult = match.hscore !== null && match.ascore !== null;
     
-    // Get prediction data
     let prediction = '';
-    let tippedTeam = 'home';
+    let tippedTeam = 'home'; // Default for 50%
     
     if (window.userPredictions && window.userPredictions[match.match_id]) {
       if (typeof window.userPredictions[match.match_id] === 'object') {
         prediction = window.userPredictions[match.match_id].probability !== null ? String(window.userPredictions[match.match_id].probability) : '';
         tippedTeam = window.userPredictions[match.match_id].tippedTeam || 'home';
       } else {
+        // Fallback for older prediction format if necessary, though current standard is object
         prediction = String(window.userPredictions[match.match_id]) || '';
       }
     }
     
-    const awayPrediction = prediction !== '' ? (100 - parseInt(prediction)) : '';
+    const awayPrediction = prediction !== '' && !isNaN(parseInt(prediction)) ? (100 - parseInt(prediction)) : '';
     const hasPrediction = prediction !== '';
     
-    // Determine button class and text based on whether prediction exists
     const buttonClass = hasPrediction ? 'save-prediction saved-state' : 'save-prediction';
     const buttonText = hasPrediction ? 'Saved' : 'Save Prediction';
     
+    // Add data-abbrev to team divs for easier access in JS if needed
+    const homeTeamName = (match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team;
+    const awayTeamName = (match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team;
+
     html += `
       <div class="match-card ${hasResult ? 'has-result' : ''} ${isLocked ? 'locked' : ''}">
         <div class="match-header">
@@ -120,9 +123,9 @@ function renderMatches(matches) {
         </div>
         
         <div class="match-teams">
-          <div class="home-team">${(match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team}</div>
+          <div class="home-team" data-abbrev="${match.home_team_abbrev || ''}">${homeTeamName}</div>
           <div class="vs">vs</div>
-          <div class="away-team">${(match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team}</div>
+          <div class="away-team" data-abbrev="${match.away_team_abbrev || ''}">${awayTeamName}</div>
         </div>
         
         ${hasResult ? `
@@ -139,7 +142,7 @@ function renderMatches(matches) {
                   <input type="number" 
                          class="prediction-input home-prediction" 
                          data-match-id="${match.match_id}" 
-                         data-original-value="${prediction}"
+                         data-original-value="${prediction}" /* Crucial for auto-save and button logic */
                          min="0" max="100" 
                          value="${prediction}">
                   <span class="input-symbol">%</span>
@@ -153,25 +156,26 @@ function renderMatches(matches) {
                          data-match-id="${match.match_id}" 
                          min="0" max="100" 
                          value="${awayPrediction}"
-                         readonly>
+                         readonly
+                         tabindex="-1">
                   <span class="input-symbol">%</span>
                 </div>
               </div>
             </div>
             
-            ${parseInt(prediction) === 50 ? `
+            ${parseInt(prediction) === 50 && hasPrediction ? `
               <div id="team-selection-${match.match_id}" class="team-selection">
                 <p>Who do you think will win?</p>
                 <div class="team-buttons">
-                  <button type="button" class="team-button home-team-button ${tippedTeam === 'home' ? 'selected' : ''}" data-team="home">${(match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team}</button>
-                  <button type="button" class="team-button away-team-button ${tippedTeam === 'away' ? 'selected' : ''}" data-team="away">${(match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team}</button>
+                  <button type="button" class="team-button home-team-button ${tippedTeam === 'home' ? 'selected' : ''}" data-team="home">${homeTeamName}</button>
+                  <button type="button" class="team-button away-team-button ${tippedTeam === 'away' ? 'selected' : ''}" data-team="away">${awayTeamName}</button>
                 </div>
               </div>
             ` : ''}
             
             <button class="${buttonClass}" 
                     data-match-id="${match.match_id}"
-                    data-tipped-team="${tippedTeam}">
+                    data-tipped-team="${(parseInt(prediction) === 50 && hasPrediction) ? tippedTeam : ''}">
               ${buttonText}
             </button>
             ${(window.isAdmin && hasResult && hasPrediction) ? `
@@ -183,17 +187,15 @@ function renderMatches(matches) {
         ` : isLocked ? `
           <div class="prediction-locked">
             ${hasPrediction ? `
-              <p>Your prediction: ${prediction}% for ${(match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team}</p>
+              <p>Your prediction: ${prediction}% for ${homeTeamName}</p>
               ${parseInt(prediction) === 50 ? `
-                <p>Tipped: ${tippedTeam === 'home' ? ((match.home_team === 'Greater Western Sydney' && match.home_team_abbrev) ? match.home_team_abbrev : match.home_team) : ((match.away_team === 'Greater Western Sydney' && match.away_team_abbrev) ? match.away_team_abbrev : match.away_team)} to win</p>
+                <p>Tipped: ${tippedTeam === 'home' ? homeTeamName : awayTeamName} to win</p>
               ` : ''}
             ` : `
               <p>No prediction made</p>
             `}
             ${!hasResult ? `<p class="locked-message">Match has started - predictions locked</p>` : ''}
-            ${hasResult ? `
-              ${hasPrediction ? calculateAccuracy(match, parseInt(prediction), tippedTeam) : ''}
-            ` : ''}
+            ${hasResult && hasPrediction ? calculateAccuracy(match, parseInt(prediction), tippedTeam) : ''}
           </div>
         ` : ''}
       </div>
@@ -202,7 +204,6 @@ function renderMatches(matches) {
   
   matchesContainer.innerHTML = html;
   
-  // Re-initialize event listeners for new elements
   initPredictionInputs();
   initSavePredictionButtons();
 }
@@ -247,100 +248,123 @@ function initPredictionInputs() {
   const homeInputs = document.querySelectorAll('.home-prediction');
   
   homeInputs.forEach(input => {
-    // Store the original value for comparison
-    const originalValue = input.value;
-    input.dataset.originalValue = originalValue;
+    // data-original-value is set by renderMatches or by savePrediction.
+    // Do not set input.dataset.originalValue = input.value here.
     
     input.addEventListener('input', function() {
       const matchId = this.dataset.matchId;
       const value = this.value.trim();
-      const originalValue = this.dataset.originalValue;
+      const originalValue = this.dataset.originalValue || ""; // From dataset, default empty
       
-      // Find the corresponding away input
       const awayInput = document.querySelector(`.away-prediction[data-match-id="${matchId}"]`);
-      
-      // Find the corresponding save button
       const saveButton = document.querySelector(`.save-prediction[data-match-id="${matchId}"]`);
       
       if (awayInput) {
         if (value === '' || isNaN(parseInt(value))) {
-          // If home is empty or not a number, clear away as well
           awayInput.value = '';
-          
-          // Remove team selection
           removeTeamSelection(matchId);
-          
-          // Update button to show "Clear Prediction" state
-          if (saveButton && originalValue !== '') {
-            saveButton.textContent = 'Clear Prediction';
-            saveButton.classList.remove('saved-state', 'update-state');
-            saveButton.classList.add('delete-state');
-            
-            // Reset tipped team
-            delete saveButton.dataset.tippedTeam;
+          if (saveButton) {
+            if (originalValue !== '') { // Clearing an existing prediction
+              saveButton.textContent = 'Clear Prediction';
+              saveButton.classList.remove('saved-state', 'update-state');
+              saveButton.classList.add('delete-state');
+            } else { // Input was empty, remains empty or invalid
+              saveButton.textContent = 'Save Prediction';
+              saveButton.classList.remove('saved-state', 'update-state', 'delete-state');
+            }
+            delete saveButton.dataset.tippedTeam; // Clear tipped team from button
           }
         } else {
-          // Otherwise calculate the away percentage
           let homeValue = parseInt(value);
-          
           // Enforce limits
-          if (homeValue < 0) {
-            homeValue = 0;
-            this.value = 0;
-          } else if (homeValue > 100) {
-            homeValue = 100;
-            this.value = 100;
+          if (homeValue < 0) homeValue = 0;
+          if (homeValue > 100) homeValue = 100;
+          // Update input field if value was corrected (e.g., "abc" or out of bounds)
+          if (String(homeValue) !== this.value.trim()) {
+             this.value = homeValue;
           }
           
           awayInput.value = 100 - homeValue;
           
-          // Update button state based on whether the value has changed
           if (saveButton) {
-            const hasPrediction = originalValue !== '';
-            const valueChanged = value !== originalValue;
+            const valueChanged = String(homeValue) !== originalValue;
             
-            if (hasPrediction && valueChanged) {
-              // Existing prediction is being changed
+            if (originalValue !== '' && valueChanged) {
               saveButton.textContent = 'Update Prediction';
               saveButton.classList.remove('saved-state', 'delete-state');
               saveButton.classList.add('update-state');
-            } else if (hasPrediction && !valueChanged) {
-              // Reverting to original prediction
-              saveButton.textContent = 'Saved';
+            } else if (originalValue !== '' && !valueChanged) {
+              saveButton.textContent = 'Saved'; // Value matches original saved value
               saveButton.classList.add('saved-state');
               saveButton.classList.remove('update-state', 'delete-state');
-            } else if (!hasPrediction) {
-              // New prediction
+            } else if (originalValue === '' && String(homeValue) !== '') { // New prediction being entered
               saveButton.textContent = 'Save Prediction';
               saveButton.classList.remove('saved-state', 'update-state', 'delete-state');
             }
-            
-            // Handle team selection for 50% predictions
+            // else: originalValue was empty, and current value is empty (handled by the first if block)
+
             const teamSelectionContainer = document.getElementById(`team-selection-${matchId}`);
-            // Inside the if block for homeValue === 50
             if (homeValue === 50) {
-              // If not already visible, add team selection
               if (!teamSelectionContainer) {
-                // Get the match card containing this input
                 const matchCard = input.closest('.match-card');
-                
                 if (matchCard) {
-                  // Get team names from the match card
-                  const homeTeam = matchCard.querySelector('.home-team').textContent;
-                  const awayTeam = matchCard.querySelector('.away-team').textContent;
-                  
-                  addTeamSelection(matchId, homeTeam, awayTeam, saveButton);
+                  const homeTeamElement = matchCard.querySelector('.home-team');
+                  const awayTeamElement = matchCard.querySelector('.away-team');
+                  const homeTeamName = homeTeamElement ? (homeTeamElement.dataset.abbrev || homeTeamElement.textContent) : 'Home';
+                  const awayTeamName = awayTeamElement ? (awayTeamElement.dataset.abbrev || awayTeamElement.textContent) : 'Away';
+                  addTeamSelection(matchId, homeTeamName, awayTeamName, saveButton);
                 }
               }
-            } else {
-              // Remove team selection for non-50% predictions
+            } else { // Not 50%
               removeTeamSelection(matchId);
-              // Clear tipped team data
-              delete saveButton.dataset.tippedTeam;
+              delete saveButton.dataset.tippedTeam; // Clear tipped team from button
             }
           }
         }
       }
+    });
+
+    // Auto-save on blur ONLY for initial valid entry
+    input.addEventListener('blur', function(event) {
+      const matchId = event.target.dataset.matchId;
+      const currentInputValue = event.target.value.trim();
+      // data-original-value is set when matches are rendered or after a save.
+      // If it's empty, it means no prediction was loaded/saved for this input yet.
+      const originalSavedValue = event.target.dataset.originalValue || "";
+
+      // Only auto-save if:
+      // 1. There was no original saved value (it's an initial entry).
+      // 2. The current input value is not empty.
+      // 3. The current input value is a valid number between 0 and 100.
+      if (originalSavedValue === "" && currentInputValue !== "") {
+        const numericProb = parseInt(currentInputValue);
+        if (!isNaN(numericProb) && numericProb >= 0 && numericProb <= 100) {
+          const saveButton = document.querySelector(`.save-prediction[data-match-id="${matchId}"]`);
+          if (saveButton) {
+            // If it's 50%, ensure saveButton.dataset.tippedTeam is set if team selection UI is present
+            if (numericProb === 50) {
+                const teamSelectionContainer = document.getElementById(`team-selection-${matchId}`);
+                if (teamSelectionContainer && !saveButton.dataset.tippedTeam) {
+                    const selectedTeamButton = teamSelectionContainer.querySelector('.team-button.selected');
+                    if (selectedTeamButton) {
+                        saveButton.dataset.tippedTeam = selectedTeamButton.dataset.team;
+                    } else {
+                        // addTeamSelection defaults to 'home' and selects it, so this should be set.
+                        // If not, savePrediction will default to 'home'.
+                        saveButton.dataset.tippedTeam = 'home'; 
+                    }
+                } else if (!teamSelectionContainer && !saveButton.dataset.tippedTeam) {
+                    // If UI not yet added but it's 50, default for auto-save
+                    saveButton.dataset.tippedTeam = 'home';
+                }
+            }
+            // Call the global savePrediction function (could be admin version)
+            window.savePrediction(matchId, currentInputValue, saveButton);
+          }
+        }
+        // No 'else' here: if invalid initial entry, user must click button (which validates)
+      }
+      // If originalSavedValue is not empty, or currentInputValue is empty, no auto-save on blur.
     });
   });
 }
@@ -495,13 +519,41 @@ function initSavePredictionButtons() {
   });
 }
 
-// Save prediction via AJAX
+// Save prediction via AJAX (general user version)
 function savePrediction(matchId, probability, button) {
-  // Check if this is a deletion (empty value)
   const isDeleting = probability === "" || probability === null;
-  
-  // Show saving state
-  const originalText = button.textContent;
+  let probValue = null; // This will be the numeric value or null
+  let tippedTeamPayload = undefined; // To be sent in JSON body
+
+  if (!isDeleting) {
+    const parsedProb = parseInt(probability);
+    if (isNaN(parsedProb) || parsedProb < 0 || parsedProb > 100) {
+      alert('Prediction must be a number between 0 and 100, or empty to clear.');
+      const inputElem = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
+      // Revert button text based on original value state
+      if (inputElem) {
+        const originalVal = inputElem.dataset.originalValue || "";
+        if (originalVal !== "") {
+            button.textContent = (probability === originalVal) ? 'Saved' : 'Update Prediction';
+        } else {
+            button.textContent = 'Save Prediction';
+        }
+        inputElem.value = originalVal; // Revert input
+        inputElem.dispatchEvent(new Event('input')); // Trigger input event to fix away input etc.
+      } else {
+        button.textContent = 'Save Prediction'; // Fallback
+      }
+      button.disabled = false;
+      return;
+    }
+    probValue = parsedProb; // Store the valid numeric probability
+    if (probValue === 50) {
+      // Get tippedTeam from button's dataset; default to 'home' if not set
+      tippedTeamPayload = button.dataset.tippedTeam || 'home';
+    }
+  }
+
+  const originalButtonText = button.textContent; // Store current text before "Saving..."
   button.textContent = isDeleting ? 'Clearing...' : 'Saving...';
   button.disabled = true;
   
@@ -512,66 +564,55 @@ function savePrediction(matchId, probability, button) {
     },
     body: JSON.stringify({
       matchId: matchId,
-      probability: probability
+      probability: probValue, // Send numeric probability or null
+      tippedTeam: tippedTeamPayload // Send tippedTeam (undefined if not 50%)
     }),
   })
   .then(response => response.json())
   .then(data => {
+    const inputElement = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
     if (data.success) {
       if (isDeleting) {
-        // Prediction was cleared
-        button.textContent = 'Prediction Cleared';
+        button.textContent = 'Cleared';
         setTimeout(() => {
           button.textContent = 'Save Prediction';
           button.classList.remove('saved-state', 'update-state', 'delete-state');
           button.disabled = false;
         }, 1500);
         
-        // Remove from stored predictions
-        if (window.userPredictions && window.userPredictions[matchId] !== undefined) {
-          delete window.userPredictions[matchId];
-        }
+        updateStoredPrediction(matchId, null, null); // Clear with nulls
         
-        // Update data-original-value attribute on input
-        const input = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
-        if (input) {
-          input.dataset.originalValue = '';
+        if (inputElement) {
+          inputElement.dataset.originalValue = ''; // Update original value to empty
         }
-      } else {
-        // Prediction was saved or updated
+      } else { // Successfully saved or updated a non-empty prediction
         button.textContent = 'Saved';
         button.classList.add('saved-state');
         button.classList.remove('update-state', 'delete-state');
         
-        // Update stored prediction
-        updateStoredPrediction(matchId, probability);
+        // probValue is numeric, tippedTeamPayload is set if 50%
+        updateStoredPrediction(matchId, probValue, tippedTeamPayload); 
         
-        // Update the original value in the input
-        const input = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
-        if (input) {
-          input.dataset.originalValue = probability;
+        if (inputElement) {
+          inputElement.dataset.originalValue = String(probValue); // Update original value
         }
         
-        // Enable button after a delay
         setTimeout(() => {
           button.disabled = false;
         }, 500);
       }
+      updateRoundButtonStates(); // Update round button states on any change
     } else {
-      button.textContent = data.error || 'Error!';
-      setTimeout(() => {
-        button.textContent = originalText;
-        button.disabled = false;
-      }, 1500);
+      alert(data.error || 'Failed to save prediction.');
+      button.textContent = originalButtonText; // Revert to text before "Saving..."
+      button.disabled = false;
     }
   })
   .catch(error => {
     console.error('Error saving prediction:', error);
-    button.textContent = 'Failed!';
-    setTimeout(() => {
-      button.textContent = originalText;
-      button.disabled = false;
-    }, 1500);
+    alert('An error occurred. Please try again.');
+    button.textContent = originalButtonText; // Revert to text before "Saving..."
+    button.disabled = false;
   });
 }
 

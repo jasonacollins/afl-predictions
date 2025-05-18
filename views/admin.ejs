@@ -278,61 +278,46 @@
       return;
     }
     
-    // Show clearing state
     const originalButtonText = button.textContent;
     button.textContent = 'Clearing...';
     button.disabled = true;
     
-    // Find inputs to clear them later
     const matchCardForClear = button.closest('.match-card');
     const input = matchCardForClear ? matchCardForClear.querySelector(`.home-prediction[data-match-id="${matchId}"]`) : null;
     const awayInput = matchCardForClear ? matchCardForClear.querySelector(`.away-prediction[data-match-id="${matchId}"]`) : null;
 
-
-    // Make the API call to clear the prediction
     fetch(`/admin/predictions/${userId}/save`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        matchId: matchId,
-        probability: ""  // Empty string to indicate deletion
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ matchId: matchId, probability: "" }), // Empty string for deletion
     })
     .then(response => response.json())
     .then(data => {
       if (data.success) {
-        // Find and clear the inputs
         if (input) input.value = '';
         if (awayInput) awayInput.value = '';
         
         button.textContent = 'Prediction Cleared';
         setTimeout(() => {
-          button.textContent = 'Save Prediction'; // Reset to default text
+          button.textContent = 'Save Prediction';
           button.classList.remove('saved-state', 'update-state', 'delete-state');
           button.disabled = false;
         }, 1500);
         
-        // Remove from stored predictions
-        updateStoredPrediction(matchId, null, null); // Use updateStoredPrediction for consistency
+        updateStoredPrediction(matchId, null, null); 
         
-        // Update data-original-value attribute on input
         if (input) {
-          input.dataset.originalValue = '';
+          input.dataset.originalValue = ''; // Crucial: Mark as empty for auto-save logic
         }
 
-        // Clear metrics display
         if (matchCardForClear) {
           const metricsContainer = matchCardForClear.querySelector('.admin-metrics-display');
-          if (metricsContainer) {
-            metricsContainer.innerHTML = '';
-          }
+          if (metricsContainer) metricsContainer.innerHTML = '';
         }
       } else {
         button.textContent = data.error || 'Error!';
         setTimeout(() => {
-          button.textContent = originalButtonText; // Revert to original text on error
+          button.textContent = originalButtonText;
           button.disabled = false;
         }, 1500);
       }
@@ -341,123 +326,119 @@
       console.error('Error clearing prediction:', error);
       button.textContent = 'Failed!';
       setTimeout(() => {
-        button.textContent = originalButtonText; // Revert to original text on failure
+        button.textContent = originalButtonText;
         button.disabled = false;
       }, 1500);
     });
   }
   
-  // Add a function to clear predictions (just for UI changes)
-  function clearPrediction(matchId) {
-    const input = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
-    const awayInput = document.querySelector(`.away-prediction[data-match-id="${matchId}"]`);
-    const saveButton = document.querySelector(`.save-prediction[data-match-id="${matchId}"]`);
-    
-    if (input) {
-      // Clear the input fields
-      input.value = '';
-      if (awayInput) awayInput.value = '';
-      
-      // Update button text
-      if (saveButton) {
-        saveButton.textContent = 'Clear Prediction';
-        saveButton.classList.remove('saved-state', 'update-state');
-        saveButton.classList.add('delete-state');
-      }
-    }
-  }
+  // ... (clearPrediction function if you still use it for UI only) ...
   
-  // Override save prediction for admin
   document.addEventListener('DOMContentLoaded', function() {
-    // Override the savePrediction function when used in admin context
-    window.savePredictionOriginal = window.savePrediction; // Keep a reference if needed elsewhere
-    window.savePrediction = function(matchId, probability, button) { // probability is string from input
+    window.savePredictionOriginal = window.savePrediction; 
+    window.savePrediction = function(matchId, probabilityString, button) { // probabilityString is from input/blur
       const userId = document.getElementById('selected-user-id').value;
       
       if (!userId) {
         alert('Please select a user first');
+        // Revert button if it was changed by a direct click before this check
+        if (button.textContent === 'Saving...') {
+            const inputElem = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
+            const originalVal = inputElem ? inputElem.dataset.originalValue || "" : "";
+            if (originalVal !== "" && originalVal === probabilityString) button.textContent = 'Saved';
+            else if (originalVal !== "") button.textContent = 'Update Prediction';
+            else button.textContent = 'Save Prediction';
+        }
+        button.disabled = false;
         return;
       }
       
-      // Special handling for empty values - directly use our special clear function
-      if (probability === "" || probability === null) {
+      if (probabilityString === "" || probabilityString === null) {
         clearPredictionDirectly(matchId, userId, button);
         return;
       }
       
-      // Show saving state
-      const originalText = button.textContent;
-      button.textContent = 'Saving...';
+      const numericProb = parseInt(probabilityString);
+      if (isNaN(numericProb) || numericProb < 0 || numericProb > 100) {
+        alert('Prediction must be a number between 0 and 100.');
+        const inputElem = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
+        if (inputElem) {
+          const originalVal = inputElem.dataset.originalValue || "";
+          inputElem.value = originalVal; // Revert input to original saved value
+           // Revert button text based on original value state
+          if (originalVal !== "") {
+            button.textContent = (probabilityString === originalVal) ? 'Saved' : 'Update Prediction';
+          } else {
+            button.textContent = 'Save Prediction';
+          }
+          inputElem.dispatchEvent(new Event('input', { bubbles: true })); // Update away input etc.
+        } else {
+            button.textContent = 'Save Prediction'; // Fallback
+        }
+        button.disabled = false;
+        return;
+      }
+
+      const originalButtonText = button.textContent;
+      // Avoid nested "Saving..." if called rapidly or from blur then click
+      if (button.textContent !== 'Saving...' && button.textContent !== 'Clearing...') {
+          button.textContent = 'Saving...';
+      }
       button.disabled = true;
       
+      let tippedTeamForPayload = undefined;
+      if (numericProb === 50) {
+        // Use tippedTeam from button dataset (set by UI or blur event)
+        // Default to 'home' if not present, though UI should ensure it is.
+        tippedTeamForPayload = button.dataset.tippedTeam || 'home';
+      }
+
       fetch(`/admin/predictions/${userId}/save`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           matchId: matchId,
-          probability: probability // Send string probability to backend
+          probability: numericProb, // Send the numeric probability
+          tippedTeam: tippedTeamForPayload
         }),
       })
       .then(response => response.json())
       .then(data => {
+        const inputElement = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
         if (data.success) {
-          button.textContent = 'Saved'; // Changed from 'Saved!' then 'Saved' to just 'Saved'
+          button.textContent = 'Saved';
           button.classList.add('saved-state');
           button.classList.remove('update-state', 'delete-state');
-          // Enable button after a short delay
-          setTimeout(() => {
-            button.disabled = false;
-          }, 500);
           
-          const numericProb = parseInt(probability); // numericProb will be number
-          let tippedTeamForStorageAndMetrics = button.dataset.tippedTeam;
-
-          if (numericProb !== 50) {
-            tippedTeamForStorageAndMetrics = undefined;
-          } else if (!tippedTeamForStorageAndMetrics && numericProb === 50) {
-            tippedTeamForStorageAndMetrics = 'home'; // Default if 50 and not set
-          }
+          updateStoredPrediction(matchId, numericProb, tippedTeamForPayload);
           
-          updateStoredPrediction(matchId, numericProb, tippedTeamForStorageAndMetrics);
-          
-          const input = document.querySelector(`.home-prediction[data-match-id="${matchId}"]`);
-          if (input) {
-            input.dataset.originalValue = probability; // Store string form
+          if (inputElement) {
+            // Crucial: Update original value for auto-save logic
+            inputElement.dataset.originalValue = String(numericProb); 
           }
 
-          // Update the metrics display
           const matchCard = button.closest('.match-card');
           if (matchCard) {
             const metricsContainer = matchCard.querySelector('.admin-metrics-display');
             const matchData = getMatchDataById(matchId);
-
             if (metricsContainer && matchData && matchData.hscore !== null && matchData.ascore !== null) {
-              if (probability === "" || probability === null) { // Prediction cleared
-                  metricsContainer.innerHTML = '';
-              } else {
-                  metricsContainer.innerHTML = calculateAccuracy(matchData, numericProb, tippedTeamForStorageAndMetrics);
-              }
+              metricsContainer.innerHTML = calculateAccuracy(matchData, numericProb, tippedTeamForPayload);
             } else if (metricsContainer) {
               metricsContainer.innerHTML = ''; 
             }
           }
+          setTimeout(() => { button.disabled = false; }, 500);
         } else {
-          button.textContent = data.error || 'Error!';
-          setTimeout(() => {
-            button.textContent = originalText;
-            button.disabled = false;
-          }, 1500);
+          alert(data.error || 'Failed to save prediction.');
+          button.textContent = originalButtonText;
+          button.disabled = false;
         }
       })
       .catch(error => {
         console.error('Error saving prediction:', error);
-        button.textContent = 'Failed!';
-        setTimeout(() => {
-          button.textContent = originalText;
-          button.disabled = false;
-        }, 1500);
+        alert('An error occurred. Please try again.');
+        button.textContent = originalButtonText;
+        button.disabled = false;
       });
     };
   });
@@ -465,9 +446,10 @@
 
 <script>
   // Function to add Clear buttons to each prediction after rendering
+  // Ensure this function's clear mechanism also updates data-original-value if it directly calls an API
+  // Or, preferably, it should call clearPredictionDirectly or the main savePrediction with an empty value.
   function addClearButtons() {
     document.querySelectorAll('.match-card').forEach(card => {
-      // Check if there's already a clear button
       if (card.querySelector('.clear-prediction')) return;
       
       const homePredictionInput = card.querySelector('.home-prediction');
@@ -475,98 +457,30 @@
 
       if (matchId) {
         const predictionControls = card.querySelector('.prediction-controls');
-        if (predictionControls && !card.querySelector('.clear-prediction')) { // Ensure not to add multiple
-          // Create a clear button
+        if (predictionControls && !card.querySelector('.clear-prediction')) {
           const clearButton = document.createElement('button');
-          clearButton.className = 'button secondary-button clear-prediction'; // Added button classes
+          clearButton.className = 'button secondary-button clear-prediction';
           clearButton.textContent = 'Clear';
           clearButton.dataset.matchId = matchId;
-          clearButton.style.marginLeft = '10px'; // Add some spacing
+          clearButton.style.marginLeft = '10px'; 
           
-          // Add click handler with direct API call
           clearButton.addEventListener('click', function(e) {
             e.preventDefault(); 
-            
             const currentMatchId = this.dataset.matchId;
             const userId = document.getElementById('selected-user-id').value;
+            const saveBtn = predictionControls.querySelector(`.save-prediction[data-match-id="${currentMatchId}"]`);
             
-            if (!userId) {
-              alert('Please select a user first');
-              return;
+            if (saveBtn) {
+                // Call the overridden savePrediction with an empty string, which routes to clearPredictionDirectly
+                window.savePrediction(currentMatchId, "", saveBtn);
+            } else {
+                console.error("Save button not found for clear action on match ID:", currentMatchId);
             }
-            
-            const currentCard = this.closest('.match-card');
-            const input = currentCard.querySelector('.home-prediction');
-            const awayInput = currentCard.querySelector('.away-prediction');
-            const saveButton = currentCard.querySelector('.save-prediction');
-            const originalSaveButtonText = saveButton.textContent;
-
-            // Show clearing state on save button
-            saveButton.textContent = 'Clearing...';
-            saveButton.disabled = true;
-            this.disabled = true; // Disable clear button too
-            
-            // Direct API call
-            fetch(`/admin/predictions/${userId}/save`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                matchId: currentMatchId,
-                probability: ""  // Use empty string for clearing
-              }),
-            })
-            .then(response => response.json())
-            .then(data => {
-              if (data.success) {
-                if (input) input.value = '';
-                if (awayInput) awayInput.value = '';
-                
-                saveButton.textContent = 'Prediction Cleared';
-                setTimeout(() => {
-                  saveButton.textContent = 'Save Prediction';
-                  saveButton.classList.remove('saved-state', 'update-state', 'delete-state');
-                  saveButton.disabled = false;
-                  this.disabled = false; // Re-enable clear button
-                }, 1500);
-                
-                updateStoredPrediction(currentMatchId, null, null);
-                
-                if (input) {
-                  input.dataset.originalValue = '';
-                }
-                // Clear metrics display
-                if (currentCard) {
-                    const metricsContainer = currentCard.querySelector('.admin-metrics-display');
-                    if (metricsContainer) {
-                        metricsContainer.innerHTML = '';
-                    }
-                }
-              } else {
-                saveButton.textContent = data.error || 'Error!';
-                setTimeout(() => {
-                  saveButton.textContent = originalSaveButtonText;
-                  saveButton.disabled = false;
-                  this.disabled = false; // Re-enable clear button
-                }, 1500);
-              }
-            })
-            .catch(error => {
-              console.error('Error clearing prediction:', error);
-              saveButton.textContent = 'Failed!';
-              setTimeout(() => {
-                saveButton.textContent = originalSaveButtonText;
-                saveButton.disabled = false;
-                this.disabled = false; // Re-enable clear button
-              }, 1500);
-            });
           });
           
-          // Append to the controls, after the save button
-          const saveBtn = predictionControls.querySelector('.save-prediction');
-          if (saveBtn && saveBtn.parentNode === predictionControls) {
-            saveBtn.insertAdjacentElement('afterend', clearButton);
+          const saveBtnElement = predictionControls.querySelector('.save-prediction');
+          if (saveBtnElement) {
+            saveBtnElement.insertAdjacentElement('afterend', clearButton);
           } else {
             predictionControls.appendChild(clearButton);
           }
