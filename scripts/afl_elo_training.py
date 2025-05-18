@@ -252,7 +252,7 @@ class AFLEloModel:
         print(f"Saved {len(df)} predictions to {filename}")
 
 
-def fetch_afl_data(db_path, end_year=None):
+def fetch_afl_data(db_path, start_year=None, end_year=None):
     """
     Fetch historical AFL match data from SQLite database
     
@@ -260,6 +260,8 @@ def fetch_afl_data(db_path, end_year=None):
     -----------
     db_path: str
         Path to SQLite database
+    start_year: int
+        Optional starting year for data. If provided, only games from this year onward are fetched.
     end_year: int
         Optional ending year for data. If provided, only games up to this year are fetched.
         
@@ -269,7 +271,11 @@ def fetch_afl_data(db_path, end_year=None):
     """
     conn = sqlite3.connect(db_path)
     
-    year_clause = f"AND m.year <= {end_year}" if end_year else ""
+    year_clause = ""
+    if start_year:
+        year_clause += f"AND m.year >= {start_year} "
+    if end_year:
+        year_clause += f"AND m.year <= {end_year}"
     
     query = f"""
     SELECT 
@@ -533,9 +539,11 @@ def parameter_tuning(data, param_grid, cv=5, max_combinations=None):
 def main():
     """Main function to train the ELO model"""
     parser = argparse.ArgumentParser(description='Train AFL ELO model')
+    parser.add_argument('--start-year', type=int, help='Start year for training data (inclusive)', 
+                    default=1990)
     parser.add_argument('--end-year', type=int, help='End year for training data (inclusive)', 
                         default=datetime.now().year)
-    parser.add_argument('--db-path', type=str, default='../data/afl_predictions.db',
+    parser.add_argument('--db-path', type=str, default='data/afl_predictions.db',
                         help='Path to the SQLite database')
     parser.add_argument('--output-dir', type=str, default='.',
                         help='Directory to save output files')
@@ -550,7 +558,7 @@ def main():
     
     print("AFL ELO Model Training")
     print("=====================")
-    print(f"Training with data up to and including year: {args.end_year}")
+    print(f"Training with data from year {args.start_year} up to and including year {args.end_year}")
     
     # Check if database exists
     if not os.path.exists(args.db_path):
@@ -563,7 +571,7 @@ def main():
     
     # Fetch data from database
     print("Fetching AFL match data from database...")
-    data = fetch_afl_data(args.db_path, end_year=args.end_year)
+    data = fetch_afl_data(args.db_path, start_year=args.start_year, end_year=args.end_year)
     print(f"Fetched {len(data)} matches from {data['year'].min()} to {data['year'].max()}")
     
     if not args.no_tune_parameters:

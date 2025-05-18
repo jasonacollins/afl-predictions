@@ -16,7 +16,7 @@
       
       <% if (locals.user) { %>
         <div class="user-info">
-          <span>Hi, <%= user.name %>!</span>
+          <span>Hi, <%= user.display_name %>!</span>
           <% if (locals.isAdmin) { %>
             <span class="admin-badge">Admin</span>
           <% } %>

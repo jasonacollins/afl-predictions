@@ -54,7 +54,7 @@
             %>
               <tr class="<%= stats.id === currentUser.id ? 'current-user' : '' %>">
                 <td><%= rank++ %></td>
-                <td><%= stats.name %> <%= stats.id === currentUser.id ? '(You)' : '' %></td>
+                <td><%= stats.display_name %> <%= stats.id === currentUser.id ? '(You)' : '' %></td>
                 <td><%= stats.brierScore %></td>
                 <td><%= stats.bitsScore %></td>
                 <td><%= stats.tipPoints %></td>

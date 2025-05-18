@@ -55,7 +55,8 @@ router.post('/login', loginLimiter, catchAsync(async (req, res) => {
   // Set session data
   req.session.user = {
     id: user.predictor_id,
-    name: user.name
+    name: user.name,
+    display_name: user.display_name
   };
   req.session.isAdmin = user.is_admin === 1;
 

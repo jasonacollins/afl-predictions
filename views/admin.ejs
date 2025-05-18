@@ -90,6 +90,11 @@
         </div>
         
         <div class="form-group">
+          <label for="displayName">Display Name</label>
+          <input type="text" id="displayName" name="displayName" required>
+        </div>
+
+        <div class="form-group">
           <label for="password">Password</label>
           <input type="password" id="password" name="password" required>
         </div>
@@ -116,7 +121,8 @@
         <thead>
           <tr>
             <th>ID</th>
-            <th>Name</th>
+            <th>Username</th>
+            <th>Display Name</th>
             <th>Role</th>
             <th>Year Joined</th>
             <th>Actions</th>
@@ -127,17 +133,18 @@
             <tr>
               <td><%= predictor.predictor_id %></td>
               <td><%= predictor.name %></td>
+              <td><%= predictor.display_name %></td>
               <td><%= predictor.is_admin ? 'Admin' : 'User' %></td>
               <td><%= predictor.year_joined || 'N/A' %></td>
               <td>
                 <button 
-                  onclick="showResetPasswordForm(<%= predictor.predictor_id %>, '<%= predictor.name %>')" 
+                  onclick="showResetPasswordForm(<%= predictor.predictor_id %>, '<%= predictor.display_name %>')" 
                   class="button secondary-button"
                 >
                   Reset Password
                 </button>
                 <button 
-                  onclick="confirmDeleteUser(<%= predictor.predictor_id %>, '<%= predictor.name %>')" 
+                  onclick="confirmDeleteUser(<%= predictor.predictor_id %>, '<%= predictor.display_name %>')" 
                   class="button secondary-button delete-button"
                 >
                   Delete User
@@ -154,14 +161,14 @@
       
       <div class="user-selection">
         <h3>Select User</h3>
-        <div class="user-buttons">
+        <<div class="user-buttons">
           <% predictors.forEach(predictor => { %>
             <button 
               class="user-button" 
               data-user-id="<%= predictor.predictor_id %>"
-              onclick="selectUser('<%= predictor.predictor_id %>', '<%= predictor.name %>')"
+              onclick="selectUser('<%= predictor.predictor_id %>', '<%= predictor.display_name %>')"
             >
-              <%= predictor.name %>
+              <%= predictor.display_name %>
             </button>
           <% }) %>
         </div>

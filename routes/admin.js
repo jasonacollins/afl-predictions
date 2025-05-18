@@ -55,7 +55,7 @@ router.get('/', catchAsync(async (req, res) => {
 
 // Add new predictor
 router.post('/predictors', catchAsync(async (req, res) => {
-  const { username, password, isAdmin, yearJoined } = req.body;
+  const { username, password, displayName, isAdmin, yearJoined } = req.body;
   
   logger.info(`Admin ${req.session.user.id} attempting to add new predictor: ${username}`);
   
@@ -79,7 +79,7 @@ router.post('/predictors', catchAsync(async (req, res) => {
   
   // Create new predictor
   const isAdminValue = isAdmin === 'on';
-  await predictorService.createPredictor(username, password, isAdminValue, yearJoined);
+  await predictorService.createPredictor(username, password, displayName, isAdminValue, yearJoined);
   
   logger.info(`New predictor created: ${username} (admin: ${isAdminValue})`);
   

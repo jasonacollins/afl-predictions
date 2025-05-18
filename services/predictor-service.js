@@ -12,7 +12,7 @@ async function getAllPredictors() {
     logger.debug('Fetching all predictors');
     
     const predictors = await getQuery(
-      'SELECT predictor_id, name, is_admin, year_joined FROM predictors ORDER BY name'
+      'SELECT predictor_id, name, display_name, is_admin, year_joined FROM predictors ORDER BY name'
     );
     
     logger.info(`Retrieved ${predictors.length} predictors`);
@@ -73,11 +73,15 @@ async function getPredictorByName(name) {
 }
 
 // Create new predictor
-async function createPredictor(username, password, isAdmin, yearJoined) {
+async function createPredictor(username, password, displayName, isAdmin, yearJoined) {
   try {
     // Validate inputs
     if (!username || !password) {
       throw createValidationError('Username and password are required');
+    }
+    
+    if (!displayName) {
+      throw createValidationError('Display name is required');
     }
     
     if (password.length < PASSWORD_MIN_LENGTH) {
@@ -93,11 +97,11 @@ async function createPredictor(username, password, isAdmin, yearJoined) {
     const yearJoinedValue = yearJoined || new Date().getFullYear();
     
     await runQuery(
-      'INSERT INTO predictors (name, password, is_admin, year_joined) VALUES (?, ?, ?, ?)',
-      [username, hashedPassword, isAdminValue, yearJoinedValue]
+      'INSERT INTO predictors (name, display_name, password, is_admin, year_joined) VALUES (?, ?, ?, ?, ?)',
+      [username, displayName, hashedPassword, isAdminValue, yearJoinedValue]
     );
     
-    logger.info(`Successfully created predictor: ${username} (admin: ${isAdminValue}, year: ${yearJoinedValue})`);
+    logger.info(`Successfully created predictor: ${username} (display: ${displayName}, admin: ${isAdminValue}, year: ${yearJoinedValue})`);
   } catch (error) {
     if (error.isOperational) {
       throw error; // Re-throw validation errors
@@ -105,6 +109,7 @@ async function createPredictor(username, password, isAdmin, yearJoined) {
     
     logger.error('Error creating predictor', { 
       username,
+      displayName,
       isAdmin,
       yearJoined,
       error: error.message 
@@ -203,7 +208,7 @@ async function getPredictorsWithAdminStatus() {
     logger.debug('Fetching predictors with admin status');
     
     const predictors = await getQuery(
-      'SELECT predictor_id, name, is_admin FROM predictors ORDER BY name'
+      'SELECT predictor_id, name, display_name, is_admin FROM predictors ORDER BY name'
     );
     
     logger.info(`Retrieved ${predictors.length} predictors with admin status`);

@@ -533,7 +533,7 @@ def main():
                         help='Start year for predictions (inclusive)')
     parser.add_argument('--model-path', type=str, required=True,
                         help='Path to the trained ELO model JSON file')
-    parser.add_argument('--db-path', type=str, default='../data/afl_predictions.db',
+    parser.add_argument('--db-path', type=str, default='data/afl_predictions.db',
                         help='Path to the SQLite database')
     parser.add_argument('--output-dir', type=str, default='.',
                         help='Directory to save output files')

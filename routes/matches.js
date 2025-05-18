@@ -193,6 +193,7 @@ router.get('/stats', catchAsync(async (req, res) => {
     predictorStats.push({
       id: predictor.predictor_id,
       name: predictor.name,
+      display_name: predictor.display_name,
       tipPoints,
       totalPredictions,
       tipAccuracy,
