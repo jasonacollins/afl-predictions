@@ -161,12 +161,13 @@
       
       <div class="user-selection">
         <h3>Select User</h3>
-        <<div class="user-buttons">
+        <div class="user-buttons">
           <% predictors.forEach(predictor => { %>
             <button 
               class="user-button" 
               data-user-id="<%= predictor.predictor_id %>"
-              onclick="selectUser('<%= predictor.predictor_id %>', '<%= predictor.display_name %>')"
+              data-display-name="<%= predictor.display_name %>"
+              onclick="selectUserByData(this)"
             >
               <%= predictor.display_name %>
             </button>
@@ -717,6 +718,15 @@
     } else if (event.target === resetModal) {
       closeModal();
     }
+  }
+</script>
+
+<script>
+  //Function to select a user and update the UI
+  function selectUserByData(buttonElement) {
+    const userId = buttonElement.getAttribute('data-user-id');
+    const userName = buttonElement.getAttribute('data-display-name');
+    selectUser(userId, userName);
   }
 </script>
 
