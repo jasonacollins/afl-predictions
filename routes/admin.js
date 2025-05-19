@@ -11,6 +11,9 @@ const predictionService = require('../services/prediction-service');
 const predictorService = require('../services/predictor-service');
 const { catchAsync, createValidationError, createNotFoundError } = require('../utils/error-handler');
 const { logger } = require('../utils/logger');
+const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
 
 // Require authentication and admin for all admin routes
 router.use(isAuthenticated);
@@ -482,6 +485,110 @@ router.get('/export/database', catchAsync(async (req, res) => {
       });
     });
   });
+}));
+
+// Configure multer storage for database uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const tempDir = path.join(__dirname, '..', 'data', 'temp');
+    // Ensure the temp directory exists
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    cb(null, tempDir);
+  },
+  filename: function (req, file, cb) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    cb(null, `temp_upload_${timestamp}.db`);
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB max file size
+  },
+  fileFilter: function(req, file, cb) {
+    // Check file extensions
+    const filetypes = /db|sqlite|sqlite3/;
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+    
+    if (extname) {
+      return cb(null, true);
+    }
+    
+    cb(new Error('Only SQLite database files are allowed'));
+  }
+});
+
+// Database upload route
+router.post('/upload-database', upload.single('databaseFile'), catchAsync(async (req, res) => {
+  logger.info(`Database upload initiated by admin ${req.session.user.id}`);
+  
+  if (!req.file) {
+    throw createValidationError('No file uploaded');
+  }
+  
+  // Get path to uploaded temp file and database
+  const uploadedFilePath = req.file.path;
+  const dbModule = require('../models/db');
+  const dbPath = dbModule.dbPath;
+  
+  try {
+    // Create backup of current database first
+    const backupDir = path.join(__dirname, '..', 'data', 'backups');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupPath = path.join(backupDir, `backup_${timestamp}.db`);
+    
+    // Copy current database to backup location
+    fs.copyFileSync(dbPath, backupPath);
+    logger.info(`Database backed up to ${backupPath}`);
+    
+    // Send successful response before performing database replacement
+    // This prevents client-side errors when the server restarts
+    res.json({ 
+      success: true, 
+      message: 'Database uploaded successfully. The application will restart shortly.' 
+    });
+    
+    // Allow time for the response to be sent
+    setTimeout(() => {
+      logger.info('Performing database replacement and server restart');
+      
+      try {
+        // Replace database file
+        fs.copyFileSync(uploadedFilePath, dbPath);
+        logger.info(`Database replaced with uploaded file`);
+        
+        // Clean up temp file
+        fs.unlinkSync(uploadedFilePath);
+        
+        // Exit the process - Docker/PM2 will restart the application
+        logger.info('Exiting process for restart after database replacement');
+        process.exit(0);
+      } catch (error) {
+        logger.error('Error during database replacement', { error: error.message });
+        // We can't send an error response here since we've already sent a success response
+      }
+    }, 1000); // Wait 1 second before replacing the database
+    
+  } catch (error) {
+    logger.error('Error handling database upload', { error: error.message });
+    
+    // Clean up temp file if it exists
+    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      message: `Error handling upload: ${error.message}` 
+    });
+  }
 }));
 
 module.exports = router;
