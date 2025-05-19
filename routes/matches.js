@@ -131,10 +131,7 @@ router.get('/stats', catchAsync(async (req, res) => {
   logger.info(`Stats page accessed by user ${req.session.user.id} for year ${selectedYear}`);
   
   // Get all available years
-  let yearQuery = 'SELECT DISTINCT year FROM matches ORDER BY year DESC';
-  if (!req.session.isAdmin) {
-    yearQuery = 'SELECT DISTINCT year FROM matches WHERE year >= 2022 ORDER BY year DESC';
-  }
+  const yearQuery = 'SELECT DISTINCT year FROM matches WHERE year >= 2022 ORDER BY year DESC';
   const years = await getQuery(yearQuery);    
   
   // Ensure all predictors have predictions for completed matches

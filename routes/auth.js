@@ -3,6 +3,8 @@ const bcrypt = require('bcrypt');
 const router = express.Router();
 const { getOne, runQuery } = require('../models/db');
 const predictorService = require('../services/predictor-service');
+const roundService = require('../services/round-service');
+const matchService = require('../services/match-service');
 const { catchAsync, createValidationError, createUnauthorizedError } = require('../utils/error-handler');
 const { logger } = require('../utils/logger');
 
@@ -112,6 +114,22 @@ function isAdmin(req, res, next) {
     });
   }
 }
+
+// Route to fetch featured predictions for a specific round
+router.get('/featured-predictions/:round', catchAsync(async (req, res) => {
+  const round = req.params.round;
+  const year = req.query.year || new Date().getFullYear();
+  
+  const featuredPredictionsService = require('../services/featured-predictions');
+  const { predictor, matches, predictions } = 
+    await featuredPredictionsService.getFeaturedPredictionsForRound(round, year);
+  
+  res.json({
+    predictor,
+    matches,
+    predictions
+  });
+}));
 
 module.exports = router;
 module.exports.isAuthenticated = isAuthenticated;

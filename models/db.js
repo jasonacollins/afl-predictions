@@ -124,6 +124,13 @@ async function initializeDatabase() {
         )
       `);
       
+      await runQuery(`
+        CREATE TABLE IF NOT EXISTS app_config (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        )
+      `);
+
       // Rest of the table creation...
       logger.info('Database schema created successfully');
     } else {

@@ -1,0 +1,394 @@
+<%- include('partials/header') %>
+
+<div class="container">
+  <div class="welcome-section">
+    <h1>Welcome to Dad's AFL Predictions</h1>
+    
+    <% if (!locals.user) { %>
+      <div class="login-buttons">
+        <a href="/login" class="button primary-button">Login</a>
+      </div>
+    <% } else { %>
+      <div class="login-buttons">
+        <a href="/predictions" class="button primary-button">Make Predictions</a>
+      </div>
+    <% } %>
+  </div>
+
+  <% if (locals.featuredPredictor) { %>
+    <div class="predictions-viewer">
+      <h2>Featured Predictions</h2>
+      
+      <div class="header-controls">
+        <div class="predictor-name">
+          <%= featuredPredictor.display_name %>'s Predictions
+        </div>
+        
+        <div class="round-selector">
+          <span>Round:</span>
+          <div class="round-buttons">
+            <% rounds.forEach(round => { %>
+              <button 
+                class="round-button <%= round.round_number === selectedRound ? 'selected' : '' %>"
+                onclick="fetchRoundPredictions('<%= round.round_number %>')">
+                <% if (round.round_number === 'OR') { %>
+                  OR
+                <% } else if (round.round_number === 'Elimination Final' || 
+                             round.round_number === 'Qualifying Final' || 
+                             round.round_number === 'Semi Final' || 
+                             round.round_number === 'Preliminary Final' || 
+                             round.round_number === 'Grand Final') { %>
+                  <%= round.round_number %>
+                <% } else { %>
+                  <%= round.round_number %>
+                <% } %>
+              </button>
+            <% }) %>
+          </div>
+        </div>
+      </div>
+      
+      <div id="predictions-table-container">
+        <table class="predictions-table">
+          <thead>
+            <tr>
+              <th>Match</th>
+              <th>Result</th>
+              <th>Prediction</th>
+              <th>Accuracy</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (matches && matches.length > 0) { %>
+              <% matches.forEach(match => { %>
+                <tr>
+                  <td class="team-names">
+                    <div><%= match.home_team %> vs <%= match.away_team %></div>
+                    <div style="font-size: 0.8rem; color: var(--light-text);"><%= match.venue %>, <%= match.match_date %></div>
+                  </td>
+                  <td class="score">
+                    <% if (match.hscore !== null && match.ascore !== null) { %>
+                      <%= match.hscore %> - <%= match.ascore %>
+                    <% } else { %>
+                      Upcoming
+                    <% } %>
+                  </td>
+                  <td class="prediction">
+                    <% if (predictions[match.match_id]) { %>
+                      <% const prediction = predictions[match.match_id] %>
+                      <% if (typeof prediction === 'object') { %>
+                        <%= prediction.probability %>% <%= prediction.probability > 50 ? match.home_team : match.away_team %>
+                      <% } else { %>
+                        <%= prediction %>% <%= prediction > 50 ? match.home_team : match.away_team %>
+                      <% } %>
+                    <% } else { %>
+                      No prediction
+                    <% } %>
+                  </td>
+                  <td class="accuracy">
+                    <% if (match.hscore !== null && match.ascore !== null && predictions[match.match_id] && match.metrics) { %>
+                      <% if (match.metrics.correct) { %>
+                        <div class="correct">✓ Correct</div>
+                      <% } else if (match.metrics.partial) { %>
+                        <div class="partial">◑ Draw</div>
+                      <% } else { %>
+                        <div class="incorrect">✗ Incorrect</div>
+                      <% } %>
+                      <div class="metrics">
+                        Brier: <%= match.metrics.brierScore.toFixed(4) %> | Bits: <%= match.metrics.bitsScore.toFixed(4) %>
+                      </div>
+                    <% } else { %>
+                      -
+                    <% } %>
+                  </td>
+                </tr>
+              <% }) %>
+            <% } else { %>
+              <tr>
+                <td colspan="4" style="text-align: center; padding: 2rem;">No matches available for this round</td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  <% } %>
+</div>
+
+<% if (locals.featuredPredictor) { %>
+  <script>
+    function fetchRoundPredictions(round) {
+      // Update active button
+      document.querySelectorAll('.round-button').forEach(btn => {
+        btn.classList.remove('selected');
+        if (btn.textContent.trim() === round) {
+          btn.classList.add('selected');
+        }
+      });
+      
+      // Show loading state
+      document.getElementById('predictions-table-container').innerHTML = 
+        '<div style="text-align: center; padding: 2rem;">Loading predictions...</div>';
+      
+      // Fetch predictions for this round
+      fetch(`/featured-predictions/${round}?year=<%= currentYear %>`)
+        .then(response => response.json())
+        .then(data => {
+          renderPredictionsTable(data.matches, data.predictions);
+        })
+        .catch(error => {
+          console.error('Error fetching predictions:', error);
+          document.getElementById('predictions-table-container').innerHTML = 
+            '<div style="text-align: center; padding: 2rem;">Error loading predictions</div>';
+        });
+    }
+    
+    function renderPredictionsTable(matches, predictions) {
+      let tableHtml = `
+        <table class="predictions-table">
+          <thead>
+            <tr>
+              <th>Match</th>
+              <th>Result</th>
+              <th>Prediction</th>
+              <th>Accuracy</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+      
+      if (matches && matches.length > 0) {
+        matches.forEach(match => {
+          // Format match date if available
+          let matchDate = match.match_date;
+          if (matchDate && matchDate.includes('T')) {
+            try {
+              const date = new Date(matchDate);
+              matchDate = date.toLocaleDateString('en-AU', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+              });
+            } catch (e) {
+              console.error('Error formatting date:', e);
+            }
+          }
+          
+          // Get prediction
+          let predictionHtml = 'No prediction';
+          if (predictions[match.match_id]) {
+            const prediction = predictions[match.match_id];
+            let probability;
+            if (typeof prediction === 'object') {
+              probability = prediction.probability;
+            } else {
+              probability = prediction;
+            }
+            
+            const teamName = probability > 50 ? match.home_team : match.away_team;
+            predictionHtml = `${probability}% ${teamName}`;
+          }
+          
+          // Result
+          let resultHtml = 'Upcoming';
+          if (match.hscore !== null && match.ascore !== null) {
+            resultHtml = `${match.hscore} - ${match.ascore}`;
+          }
+          
+          // Accuracy
+          let accuracyHtml = '-';
+          if (match.hscore !== null && match.ascore !== null && 
+              predictions[match.match_id] && match.metrics) {
+            
+            if (match.metrics.correct) {
+              accuracyHtml = `<div class="correct">✓ Correct</div>`;
+            } else if (match.metrics.partial) {
+              accuracyHtml = `<div class="partial">◑ Draw</div>`;
+            } else {
+              accuracyHtml = `<div class="incorrect">✗ Incorrect</div>`;
+            }
+            
+            accuracyHtml += `
+              <div class="metrics">
+                Brier: ${match.metrics.brierScore.toFixed(4)} | 
+                Bits: ${match.metrics.bitsScore.toFixed(4)}
+              </div>
+            `;
+          }
+          
+          tableHtml += `
+            <tr>
+              <td class="team-names">
+                <div>${match.home_team} vs ${match.away_team}</div>
+                <div style="font-size: 0.8rem; color: var(--light-text);">${match.venue}, ${matchDate}</div>
+              </td>
+              <td class="score">${resultHtml}</td>
+              <td class="prediction">${predictionHtml}</td>
+              <td class="accuracy">${accuracyHtml}</td>
+            </tr>
+          `;
+        });
+      } else {
+        tableHtml += `
+          <tr>
+            <td colspan="4" style="text-align: center; padding: 2rem;">No matches available for this round</td>
+          </tr>
+        `;
+      }
+      
+      tableHtml += `
+          </tbody>
+        </table>
+      `;
+      
+      document.getElementById('predictions-table-container').innerHTML = tableHtml;
+    }
+  </script>
+<% } %>
+
+<style>
+  .welcome-section {
+    text-align: center;
+    margin-bottom: 2rem;
+    padding: 2rem;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+  
+  .welcome-section h1 {
+    margin-bottom: 1rem;
+  }
+  
+  .welcome-section p {
+    margin-bottom: 1.5rem;
+    font-size: 1.1rem;
+  }
+  
+  .login-buttons {
+    margin-top: 1rem;
+  }
+  
+  .login-buttons .button {
+    display: inline-block;
+    width: auto;
+    min-width: 150px;
+  }
+  
+  .predictions-viewer {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    padding: 1.5rem;
+    width: 100%;
+  }
+  
+  .header-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  
+  .predictor-name {
+    font-weight: bold;
+    color: var(--primary-color);
+  }
+  
+  .round-selector {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  
+  .round-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  
+  .round-button {
+    background-color: var(--background-light);
+    border: 1px solid var(--border-color);
+    padding: 0.4rem 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+  }
+  
+  .round-button:hover {
+    background-color: #f0f0f0;
+  }
+  
+  .round-button.selected {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+  }
+  
+  .predictions-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+  }
+  
+  .predictions-table th {
+    background-color: var(--background-light);
+    font-weight: 600;
+    text-align: left;
+    padding: 0.75rem;
+    border-bottom: 2px solid var(--border-color);
+  }
+  
+  .predictions-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+  }
+  
+  .predictions-table tr:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+  }
+  
+  .team-names {
+    font-weight: 600;
+  }
+  
+  .score {
+    text-align: center;
+    font-weight: 600;
+  }
+  
+  .prediction {
+    text-align: center;
+  }
+  
+  .accuracy {
+    text-align: center;
+  }
+  
+  .metrics {
+    font-size: 0.8rem;
+    color: var(--light-text);
+  }
+  
+  .correct {
+    color: var(--success-color);
+    font-weight: bold;
+  }
+  
+  .incorrect {
+    color: var(--error-color);
+    font-weight: bold;
+  }
+  
+  .partial {
+    color: var(--warning-color);
+    font-weight: bold;
+  }
+</style>
+
+<%- include('partials/footer') %>

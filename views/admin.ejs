@@ -80,6 +80,24 @@
     </div>
   <% } %>
   
+  <div class="admin-section">
+    <h2>Set Featured Predictor</h2>
+    <p>Select which predictor's results will be featured on the login page:</p>
+    <form action="/admin/set-featured-predictor" method="POST" class="admin-form">
+      <div class="form-group">
+        <label for="predictorId">Featured Predictor</label>
+        <select id="predictorId" name="predictorId" required>
+          <% predictors.forEach(predictor => { %>
+            <option value="<%= predictor.predictor_id %>" <%= predictor.predictor_id == featuredPredictorId ? 'selected' : '' %>>
+              <%= predictor.display_name %>
+            </option>
+          <% }) %>
+        </select>
+      </div>
+      <button type="submit" class="button primary-button">Save Setting</button>
+    </form>
+  </div>
+
   <div class="admin-container">
     <div class="admin-section">
       <h2>Add New Predictor</h2>

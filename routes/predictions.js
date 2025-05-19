@@ -19,16 +19,14 @@ router.get('/', catchAsync(async (req, res) => {
   const currentYear = new Date().getFullYear();
   const selectedYear = req.query.year ? parseInt(req.query.year) : currentYear;
   
-  // Get all available years (filtered for non-admin users)
+  // Get all available years
   let yearQuery = 'SELECT DISTINCT year FROM matches ORDER BY year DESC';
-  if (!req.session.isAdmin) {
-    // Get the user's year_joined
-    const user = await predictorService.getPredictorById(req.session.user.id);
-    const userYearJoined = user.year_joined || 2022;
-    
-    // Filter years based on when the user joined
-    yearQuery = `SELECT DISTINCT year FROM matches WHERE year >= ${userYearJoined} ORDER BY year DESC`;
-  }
+  // Get the user's year_joined
+  const user = await predictorService.getPredictorById(req.session.user.id);
+  const userYearJoined = user.year_joined || 2022;
+  
+  // Filter years based on when the user joined
+  yearQuery = `SELECT DISTINCT year FROM matches WHERE year >= ${userYearJoined} ORDER BY year DESC`;
   const years = await getQuery(yearQuery);
       
   // Get all rounds for the selected year

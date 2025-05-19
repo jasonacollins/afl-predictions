@@ -44,12 +44,17 @@ router.get('/', catchAsync(async (req, res) => {
   // Get all rounds for the selected year
   const rounds = await roundService.getRoundsForYear(selectedYear);
   
+  // Get featured predictor ID
+  const featuredPredictionsService = require('../services/featured-predictions');
+  const featuredPredictorId = await featuredPredictionsService.getFeaturedPredictorId();
+  
   res.render('admin', {
     predictors,
     rounds,
     years,
     selectedYear,
     selectedUser: null,
+    featuredPredictorId,
     success: req.query.success || null,
     error: req.query.error || null,
     isAdmin: true
@@ -589,6 +594,30 @@ router.post('/upload-database', upload.single('databaseFile'), catchAsync(async 
       message: `Error handling upload: ${error.message}` 
     });
   }
+}));
+
+// Set featured predictor for login page
+router.post('/set-featured-predictor', catchAsync(async (req, res) => {
+  const { predictorId } = req.body;
+  
+  logger.info(`Admin ${req.session.user.id} setting featured predictor ID: ${predictorId}`);
+  
+  // Validate predictor exists
+  const predictor = await predictorService.getPredictorById(predictorId);
+  
+  if (!predictor) {
+    throw createNotFoundError('Predictor');
+  }
+  
+  // Save to database config
+  await runQuery(
+    'INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)',
+    ['featured_predictor', predictorId]
+  );
+  
+  logger.info(`Featured predictor set to ID: ${predictorId}`);
+  
+  res.redirect('/admin?success=Featured predictor updated successfully');
 }));
 
 module.exports = router;
