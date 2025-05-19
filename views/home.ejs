@@ -50,14 +50,14 @@
       
       <div id="predictions-table-container">
         <table class="predictions-table">
-          <thead>
-            <tr>
-              <th>Match</th>
-              <th>Result</th>
-              <th>Prediction</th>
-              <th>Accuracy</th>
-            </tr>
-          </thead>
+            <thead>
+                <tr>
+                <th style="text-align: left;">Match</th>
+                <th style="text-align: center;">Result</th>
+                <th style="text-align: center;">Prediction</th>
+                <th style="text-align: center;">Accuracy</th>
+                </tr>
+            </thead>
           <tbody>
             <% if (matches && matches.length > 0) { %>
               <% matches.forEach(match => { %>
@@ -75,14 +75,26 @@
                   </td>
                   <td class="prediction">
                     <% if (predictions[match.match_id]) { %>
-                      <% const prediction = predictions[match.match_id] %>
-                      <% if (typeof prediction === 'object') { %>
-                        <%= prediction.probability %>% <%= prediction.probability > 50 ? match.home_team : match.away_team %>
-                      <% } else { %>
-                        <%= prediction %>% <%= prediction > 50 ? match.home_team : match.away_team %>
-                      <% } %>
+                        <% const prediction = predictions[match.match_id] %>
+                        <% if (typeof prediction === 'object') { %>
+                        <% if (prediction.probability > 50) { %>
+                            <%= prediction.probability %>% <%= match.home_team %>
+                        <% } else if (prediction.probability < 50) { %>
+                            <%= 100 - prediction.probability %>% <%= match.away_team %>
+                        <% } else { %>
+                            50% draw (tipped: <%= prediction.tipped_team === 'home' ? match.home_team : match.away_team %>)
+                        <% } %>
+                        <% } else { %>
+                        <% if (prediction > 50) { %>
+                            <%= prediction %>% <%= match.home_team %>
+                        <% } else if (prediction < 50) { %>
+                            <%= 100 - prediction %>% <%= match.away_team %>
+                        <% } else { %>
+                            50% draw
+                        <% } %>
+                        <% } %>
                     <% } else { %>
-                      No prediction
+                        No prediction
                     <% } %>
                   </td>
                   <td class="accuracy">
@@ -148,10 +160,10 @@
         <table class="predictions-table">
           <thead>
             <tr>
-              <th>Match</th>
-              <th>Result</th>
-              <th>Prediction</th>
-              <th>Accuracy</th>
+            <th style="text-align: left;">Match</th>
+            <th style="text-align: center;">Result</th>
+            <th style="text-align: center;">Prediction</th>
+            <th style="text-align: center;">Accuracy</th>
             </tr>
           </thead>
           <tbody>
@@ -177,17 +189,30 @@
           // Get prediction
           let predictionHtml = 'No prediction';
           if (predictions[match.match_id]) {
-            const prediction = predictions[match.match_id];
-            let probability;
-            if (typeof prediction === 'object') {
-              probability = prediction.probability;
-            } else {
-              probability = prediction;
-            }
-            
-            const teamName = probability > 50 ? match.home_team : match.away_team;
-            predictionHtml = `${probability}% ${teamName}`;
+          const prediction = predictions[match.match_id];
+          let probability;
+          let tippedTeam;
+        
+          if (typeof prediction === 'object') {
+          probability = prediction.probability;
+            tippedTeam = prediction.tipped_team;
+          } else {
+            probability = prediction;
+            tippedTeam = null;
           }
+        
+          if (probability > 50) {
+            predictionHtml = `${probability}% ${match.home_team}`;
+          } else if (probability < 50) {
+            predictionHtml = `${100 - probability}% ${match.away_team}`;
+          } else { // exactly 50%
+            if (tippedTeam) {
+              predictionHtml = `50% draw (tipped: ${tippedTeam === 'home' ? match.home_team : match.away_team})`;
+            } else {
+             predictionHtml = `50% draw`;
+            }
+           }
+         }
           
           // Result
           let resultHtml = 'Upcoming';
@@ -335,26 +360,44 @@
     font-size: 0.9rem;
   }
   
-  .predictions-table th {
-    background-color: var(--background-light);
-    font-weight: 600;
-    text-align: left;
-    padding: 0.75rem;
-    border-bottom: 2px solid var(--border-color);
-  }
-  
+  .predictions-table th,
   .predictions-table td {
     padding: 0.75rem;
     border-bottom: 1px solid var(--border-color);
     vertical-align: middle;
   }
   
+  /* Match column - align left */
+  .predictions-table th:nth-child(1),
+  .predictions-table td:nth-child(1) {
+    text-align: left;
+  }
+    
+  /* Result column - align center */
+  .predictions-table th:nth-child(2),
+  .predictions-table td:nth-child(2) {
+    text-align: center;
+  }
+    
+    /* Prediction column - align center */
+    .predictions-table th:nth-child(3),
+    .predictions-table td:nth-child(3) {
+    text-align: center;
+  }
+    
+  /* Accuracy column - align center */
+  .predictions-table th:nth-child(4),
+  .predictions-table td:nth-child(4) {
+    text-align: center;
+  }
+
   .predictions-table tr:hover {
     background-color: rgba(0, 0, 0, 0.02);
   }
   
   .team-names {
     font-weight: 600;
+    text-align: left !important;
   }
   
   .score {
