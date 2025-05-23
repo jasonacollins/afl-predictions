@@ -3,8 +3,7 @@ const { getQuery, getOne, runQuery } = require('../models/db');
 const bcrypt = require('bcrypt');
 const { AppError, createNotFoundError, createValidationError } = require('../utils/error-handler');
 const { logger } = require('../utils/logger');
-
-const PASSWORD_MIN_LENGTH = 12;
+const passwordService = require('./password-service');
 
 // Get all predictors
 async function getAllPredictors() {
@@ -84,8 +83,10 @@ async function createPredictor(username, password, displayName, isAdmin, yearJoi
       throw createValidationError('Display name is required');
     }
     
-    if (password.length < PASSWORD_MIN_LENGTH) {
-      throw createValidationError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
+    // Validate password
+    const passwordValidation = passwordService.validatePassword(password);
+    if (!passwordValidation.isValid) {
+      throw createValidationError(passwordValidation.errors.join('. '));
     }
     
     logger.info(`Creating new predictor: ${username}`);
@@ -132,8 +133,10 @@ async function resetPassword(predictorId, newPassword) {
       throw createValidationError('New password is required');
     }
     
-    if (newPassword.length < PASSWORD_MIN_LENGTH) {
-      throw createValidationError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
+    // Validate password
+    const passwordValidation = passwordService.validatePassword(newPassword);
+    if (!passwordValidation.isValid) {
+      throw createValidationError(passwordValidation.errors.join('. '));
     }
     
     logger.info(`Resetting password for predictor ID: ${predictorId}`);
@@ -221,7 +224,6 @@ async function getPredictorsWithAdminStatus() {
 }
 
 module.exports = {
-  PASSWORD_MIN_LENGTH,
   getAllPredictors,
   getPredictorById,
   getPredictorByName,

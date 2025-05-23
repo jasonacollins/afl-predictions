@@ -9,6 +9,7 @@ const roundService = require('../services/round-service');
 const matchService = require('../services/match-service');
 const predictionService = require('../services/prediction-service');
 const predictorService = require('../services/predictor-service');
+const passwordService = require('../services/password-service'); // ADD THIS LINE
 const { catchAsync, createValidationError, createNotFoundError } = require('../utils/error-handler');
 const { logger } = require('../utils/logger');
 const multer = require('multer');
@@ -18,12 +19,6 @@ const path = require('path');
 // Require authentication and admin for all admin routes
 router.use(isAuthenticated);
 router.use(isAdmin);
-
-// Password strength validation
-function isStrongPassword(password) {
-  // At least 12 characters
-  return password && password.length >= 12;
-}
 
 // Admin dashboard
 router.get('/', catchAsync(async (req, res) => {
@@ -62,37 +57,51 @@ router.get('/', catchAsync(async (req, res) => {
 }));
 
 // Add new predictor
-router.post('/predictors', catchAsync(async (req, res) => {
-  const { username, password, displayName, isAdmin, yearJoined } = req.body;
-  
-  logger.info(`Admin ${req.session.user.id} attempting to add new predictor: ${username}`);
-  
-  // Validate input
-  if (!username || !password) {
-    throw createValidationError('Username and password are required');
+router.post('/predictors', async (req, res, next) => {
+  try {
+    const { username, password, displayName, isAdmin, yearJoined } = req.body;
+    
+    logger.info(`Admin ${req.session.user.id} attempting to add new predictor: ${username}`);
+    
+    // Validate input
+    if (!username || !password) {
+      return res.redirect('/admin?error=' + encodeURIComponent('Username and password are required'));
+    }
+    
+    // Validate password
+    const passwordValidation = passwordService.validatePassword(password);
+    if (!passwordValidation.isValid) {
+      logger.warn(`Invalid password attempt for new user ${username}: ${passwordValidation.errors.join('. ')}`);
+      return res.redirect(`/admin?error=${encodeURIComponent(passwordValidation.errors.join('. '))}`);
+    }
+    
+    // Check if user already exists
+    const existingUser = await predictorService.getPredictorByName(username);
+    
+    if (existingUser) {
+      logger.warn(`Attempt to create duplicate user: ${username}`);
+      return res.redirect('/admin?error=' + encodeURIComponent('User already exists'));
+    }
+    
+    // Create new predictor
+    const isAdminValue = isAdmin === 'on';
+    await predictorService.createPredictor(username, password, displayName, isAdminValue, yearJoined);
+    
+    logger.info(`New predictor created: ${username} (admin: ${isAdminValue})`);
+    
+    res.redirect('/admin?success=Predictor added successfully');
+  } catch (error) {
+    // Handle validation errors from the service
+    if (error.isOperational && error.errorCode === 'VALIDATION_ERROR') {
+      logger.warn(`Validation error creating predictor: ${error.message}`);
+      return res.redirect('/admin?error=' + encodeURIComponent(error.message));
+    }
+    
+    // Only use next(error) for unexpected errors
+    logger.error('Unexpected error creating predictor', { error: error.message });
+    next(error);
   }
-  
-  // Check password length
-  if (password.length < predictorService.PASSWORD_MIN_LENGTH) {
-    throw createValidationError(`Password must be at least ${predictorService.PASSWORD_MIN_LENGTH} characters`);
-  }
-  
-  // Check if user already exists
-  const existingUser = await predictorService.getPredictorByName(username);
-  
-  if (existingUser) {
-    logger.warn(`Attempt to create duplicate user: ${username}`);
-    throw createValidationError('User already exists');
-  }
-  
-  // Create new predictor
-  const isAdminValue = isAdmin === 'on';
-  await predictorService.createPredictor(username, password, displayName, isAdminValue, yearJoined);
-  
-  logger.info(`New predictor created: ${username} (admin: ${isAdminValue})`);
-  
-  res.redirect('/admin?success=Predictor added successfully');
-}));
+});
 
 // Get predictions for a specific user
 router.get('/predictions/:userId', catchAsync(async (req, res) => {
@@ -102,7 +111,7 @@ router.get('/predictions/:userId', catchAsync(async (req, res) => {
   const user = await predictorService.getPredictorById(userId);
   
   if (!user) {
-    throw createNotFoundError('User');
+    return res.redirect('/admin?error=' + encodeURIComponent('User not found'));
   }
   
   logger.debug(`Fetching predictions for user ${userId}`);
@@ -361,36 +370,46 @@ router.get('/export/predictions', catchAsync(async (req, res) => {
 }));
 
 // Password reset route
-router.post('/reset-password/:userId', catchAsync(async (req, res) => {
-  const userId = req.params.userId;
-  const { newPassword } = req.body;
-  
-  logger.info(`Password reset requested for user ${userId} by admin ${req.session.user.id}`);
-  
-  // Validate input
-  if (!newPassword) {
-    throw createValidationError('New password is required');
+router.post('/reset-password/:userId', async (req, res, next) => {
+  try {
+    const userId = req.params.userId;
+    const { newPassword } = req.body;
+    
+    logger.info(`Password reset requested for user ${userId} by admin ${req.session.user.id}`);
+    
+    // Validate input
+    if (!newPassword) {
+      return res.redirect('/admin?error=' + encodeURIComponent('New password is required'));
+    }
+    
+    // Validate password
+    const passwordValidation = passwordService.validatePassword(newPassword);
+    if (!passwordValidation.isValid) {
+      logger.warn(`Invalid password in reset attempt for user ${userId}: ${passwordValidation.errors.join('. ')}`);
+      return res.redirect(`/admin?error=${encodeURIComponent(passwordValidation.errors.join('. '))}`);
+    }
+    
+    // Check if user exists
+    const user = await predictorService.getPredictorById(userId);
+    
+    if (!user) {
+      return res.redirect('/admin?error=' + encodeURIComponent('User not found'));
+    }
+    
+    // Reset password
+    await predictorService.resetPassword(userId, newPassword);
+    
+    logger.info(`Password reset successful for user ${userId}`);
+    
+    res.redirect('/admin?success=Password reset successfully');
+  } catch (error) {
+    logger.error('Unexpected error resetting password', { 
+      userId: req.params.userId,
+      error: error.message 
+    });
+    next(error);
   }
-  
-  // Check password length
-  if (newPassword.length < predictorService.PASSWORD_MIN_LENGTH) {
-    throw createValidationError(`Password must be at least ${predictorService.PASSWORD_MIN_LENGTH} characters`);
-  }
-  
-  // Check if user exists
-  const user = await predictorService.getPredictorById(userId);
-  
-  if (!user) {
-    throw createNotFoundError('User');
-  }
-  
-  // Reset password
-  await predictorService.resetPassword(userId, newPassword);
-  
-  logger.info(`Password reset successful for user ${userId}`);
-  
-  res.redirect('/admin?success=Password reset successfully');
-}));
+});
 
 // API refresh route
 router.post('/api-refresh', catchAsync(async (req, res) => {
@@ -418,30 +437,38 @@ router.post('/api-refresh', catchAsync(async (req, res) => {
 }));
 
 // Delete user route
-router.post('/delete-user/:userId', catchAsync(async (req, res) => {
-  const userId = req.params.userId;
-  
-  logger.info(`User deletion requested for user ${userId} by admin ${req.session.user.id}`);
-  
-  // Don't allow deleting the current logged-in user
-  if (parseInt(userId) === req.session.user.id) {
-    throw createValidationError('You cannot delete your own account');
+router.post('/delete-user/:userId', async (req, res, next) => {
+  try {
+    const userId = req.params.userId;
+    
+    logger.info(`User deletion requested for user ${userId} by admin ${req.session.user.id}`);
+    
+    // Don't allow deleting the current logged-in user
+    if (parseInt(userId) === req.session.user.id) {
+      return res.redirect('/admin?error=' + encodeURIComponent('You cannot delete your own account'));
+    }
+    
+    // Check if user exists
+    const user = await predictorService.getPredictorById(userId);
+    
+    if (!user) {
+      return res.redirect('/admin?error=' + encodeURIComponent('User not found'));
+    }
+    
+    // Delete the user and their predictions
+    await predictorService.deletePredictor(userId);
+    
+    logger.info(`User ${userId} deleted successfully`);
+    
+    res.redirect('/admin?success=User deleted successfully');
+  } catch (error) {
+    logger.error('Unexpected error deleting user', { 
+      userId: req.params.userId,
+      error: error.message 
+    });
+    next(error);
   }
-  
-  // Check if user exists
-  const user = await predictorService.getPredictorById(userId);
-  
-  if (!user) {
-    throw createNotFoundError('User');
-  }
-  
-  // Delete the user and their predictions
-  await predictorService.deletePredictor(userId);
-  
-  logger.info(`User ${userId} deleted successfully`);
-  
-  res.redirect('/admin?success=User deleted successfully');
-}));
+});
 
 // Database export route
 router.get('/export/database', catchAsync(async (req, res) => {
@@ -597,27 +624,35 @@ router.post('/upload-database', upload.single('databaseFile'), catchAsync(async 
 }));
 
 // Set featured predictor for login page
-router.post('/set-featured-predictor', catchAsync(async (req, res) => {
-  const { predictorId } = req.body;
-  
-  logger.info(`Admin ${req.session.user.id} setting featured predictor ID: ${predictorId}`);
-  
-  // Validate predictor exists
-  const predictor = await predictorService.getPredictorById(predictorId);
-  
-  if (!predictor) {
-    throw createNotFoundError('Predictor');
+router.post('/set-featured-predictor', async (req, res, next) => {
+  try {
+    const { predictorId } = req.body;
+    
+    logger.info(`Admin ${req.session.user.id} setting featured predictor ID: ${predictorId}`);
+    
+    // Validate predictor exists
+    const predictor = await predictorService.getPredictorById(predictorId);
+    
+    if (!predictor) {
+      return res.redirect('/admin?error=' + encodeURIComponent('Predictor not found'));
+    }
+    
+    // Save to database config
+    await runQuery(
+      'INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)',
+      ['featured_predictor', predictorId]
+    );
+    
+    logger.info(`Featured predictor set to ID: ${predictorId}`);
+    
+    res.redirect('/admin?success=Featured predictor updated successfully');
+  } catch (error) {
+    logger.error('Unexpected error setting featured predictor', { 
+      predictorId: req.body.predictorId,
+      error: error.message 
+    });
+    next(error);
   }
-  
-  // Save to database config
-  await runQuery(
-    'INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)',
-    ['featured_predictor', predictorId]
-  );
-  
-  logger.info(`Featured predictor set to ID: ${predictorId}`);
-  
-  res.redirect('/admin?success=Featured predictor updated successfully');
-}));
+});
 
 module.exports = router;

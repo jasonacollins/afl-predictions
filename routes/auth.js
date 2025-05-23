@@ -35,7 +35,7 @@ router.post('/login', loginLimiter, catchAsync(async (req, res) => {
   // Validate input
   if (!username || !password) {
     logger.warn('Login attempt with missing credentials');
-    throw createValidationError('Username and password are required');
+    return res.render('index', { error: 'Username and password are required' });
   }
 
   // Check if user exists
@@ -43,7 +43,7 @@ router.post('/login', loginLimiter, catchAsync(async (req, res) => {
 
   if (!user) {
     logger.warn(`Failed login attempt for non-existent user: ${username}`);
-    throw createUnauthorizedError('Invalid username or password');
+    return res.render('index', { error: 'Invalid username or password' });
   }
 
   // Validate password
@@ -51,7 +51,7 @@ router.post('/login', loginLimiter, catchAsync(async (req, res) => {
   
   if (!isPasswordValid) {
     logger.warn(`Failed login attempt for user: ${username} - invalid password`);
-    throw createUnauthorizedError('Invalid username or password');
+    return res.render('index', { error: 'Invalid username or password' });
   }
 
   // Set session data
